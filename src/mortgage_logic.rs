@@ -40,7 +40,7 @@ impl Loan {
         }
     }
 
-    pub fn calculate_annuity(&self) -> LoanResult {
+    fn calculate_annuity(&self) -> LoanResult {
         let monthly_rate = self.interest_rate / 12.0 / 100.0;
         let term_months = self.term_years * 12;
         let numerator = monthly_rate * (1.0 + monthly_rate).powi(term_months as i32);
@@ -76,7 +76,7 @@ impl Loan {
         }
     }
 
-    pub fn calculate_diff(&self) -> LoanResult {
+    fn calculate_diff(&self) -> LoanResult {
         let monthly_rate = self.interest_rate / 12.0 / 100.0;
         let term_months = self.term_years * 12;
         let principal_part = self.amount / term_months as f64;
@@ -107,6 +107,14 @@ impl Loan {
             monthly_payment: None, // No fixed monthly payment
             total_interest: total_interest,
             payments,
+        }
+    }
+
+    pub fn calculate_loan(&self) -> LoanResult {
+        match self.payment_type.as_str() {
+            "annuitet" => self.calculate_annuity(),
+            "diff" => self.calculate_diff(),
+            _ => panic!("Unknown payment type"),
         }
     }
 }
