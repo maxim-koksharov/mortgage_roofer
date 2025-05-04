@@ -2,14 +2,14 @@ pub mod mortgage_logic;
 
 fn main() {
     let loan = mortgage_logic::Loan::new(
-        100000.0,
-        5.0,
-        15,
+        185000.0,
+        3.6,
+        30,
         "annuitet".to_string(),
-        chrono::NaiveDate::from_ymd_opt(2023, 1, 1),
+        chrono::NaiveDate::from_ymd_opt(2025, 5, 12),
     );
 
-    let result = loan.calculate_annuity();
+    let result = loan.calculate_loan();
 
     println!("Monthly Payment: {:?}", result.monthly_payment);
     println!("Total Interest: {:?}", result.total_interest);
