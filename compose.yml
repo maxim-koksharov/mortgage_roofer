@@ -1,0 +1,26 @@
+name: mortgage_roofer
+
+x-common: &common
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: mortgage_roofer
+  working_dir: /workspace
+  user: "${UID}:${GID}"
+  environment:
+    - HOME=/workspace/.opencode-home
+    - XDG_CONFIG_HOME=/workspace/.opencode-home/.config
+    - XDG_DATA_HOME=/workspace/.opencode-home/.local/share
+    - XDG_CACHE_HOME=/workspace/.opencode-home/.cache
+  volumes:
+    - ".:/workspace:rw"
+    - "${HOME}/.config/opencode:/workspace/.opencode-home/.config/opencode:rw"
+    - "${HOME}/.local/share/opencode:/workspace/.opencode-home/.local/share/opencode:rw"
+    - "${HOME}/.cache/opencode:/workspace/.opencode-home/.cache/opencode:rw"
+  tty: true
+  stdin_open: true
+
+services:
+  bash:
+    <<: *common
+    command: ["bash"]
