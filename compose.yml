@@ -4,8 +4,6 @@ x-common: &common
   build:
     context: .
     dockerfile: Dockerfile
-    cache_from:
-      - mortgage_roofer
   image: mortgage_roofer
   working_dir: /workspace
   environment:
