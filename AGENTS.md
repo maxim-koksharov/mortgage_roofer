@@ -1,5 +1,7 @@
 # AGENTS.md
 
+> See also: [`README.md`](README.md) (user-facing overview), plus per-crate READMEs in `mortgage_core/`, `mortgage_cli/`, `mortgage_tui/`, `mortgage_gui/`.
+
 ## Project
 
 - Cargo workspace `mortgage_roofer` with 4 member crates:
