@@ -7,3 +7,4 @@ edition = "2024"
 mortgage_core = { path = "../mortgage_core" }
 ratatui = { workspace = true }
 crossterm = { workspace = true }
+chrono = { workspace = true }
