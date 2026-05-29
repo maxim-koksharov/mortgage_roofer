@@ -1,0 +1,23 @@
+{
+  "amount": 200000,
+  "term_years": 20,
+  "payment_type": "annuitet",
+  "currency": "Eur",
+  "start_date": "2025-01-01",
+  "rate_mode": {
+    "Mixed": {
+      "fix_years": 2,
+      "fix_rate": 2.5,
+      "fix_spread": 1.0,
+      "euribor_tenor": "6m",
+      "euribor_spread": 1.5
+    }
+  },
+  "same_spread": false,
+  "euribor_curve": [
+    { "date_from": "2027-01-01", "rate": 3.0 }
+  ],
+  "prepayments": [
+    { "date": "2028-01-01", "amount": 50000, "effect": "ReduceTerm" }
+  ]
+}
