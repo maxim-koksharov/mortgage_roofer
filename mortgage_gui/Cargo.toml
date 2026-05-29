@@ -5,7 +5,8 @@ edition = "2024"
 
 [dependencies]
 mortgage_core = { path = "../mortgage_core" }
-iced = { workspace = true }
+iced = { workspace = true, features = ["svg"] }
 plotters = { version = "0.3", default-features = false, features = ["svg_backend", "ab_glyph", "chrono", "line_series", "area_series"] }
 printpdf = { workspace = true }
 serde_json = { workspace = true }
+chrono = { workspace = true }
