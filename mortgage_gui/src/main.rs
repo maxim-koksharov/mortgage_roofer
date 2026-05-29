@@ -1,6 +1,6 @@
 use iced::{
     widget::{
-        button, column, container, row, scrollable, svg, text, text_input, Column,
+        button, checkbox, column, container, pick_list, row, scrollable, svg, text, text_input, Column,
     },
     Alignment, Element, Length,
 };
@@ -18,6 +18,20 @@ enum Message {
     TermChanged(String),
     RateChanged(String),
     SpreadChanged(String),
+    CurrencyChanged(String),
+    PaymentTypeChanged(String),
+    RateModeChanged(String),
+    EuriborTenorChanged(String),
+    EuriborSpreadChanged(String),
+    MixedFixYearsChanged(String),
+    MixedFixRateChanged(String),
+    MixedFixSpreadChanged(String),
+    MixedEuriborTenorChanged(String),
+    MixedEuriborSpreadChanged(String),
+    SameSpreadToggled(bool),
+    PrepaymentDateChanged(String),
+    PrepaymentAmountChanged(String),
+    PrepaymentEffectChanged(String),
     Calculate,
     ExportCsv,
     ExportPdf,
@@ -25,16 +39,59 @@ enum Message {
     ShowChart,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 struct State {
     amount: String,
     term: String,
     rate: String,
     spread: String,
+    currency: String,
+    payment_type: String,
+    rate_mode: String,
+    euribor_tenor: String,
+    euribor_spread: String,
+    mixed_fix_years: String,
+    mixed_fix_rate: String,
+    mixed_fix_spread: String,
+    mixed_euribor_tenor: String,
+    mixed_euribor_spread: String,
+    same_spread: bool,
+    prepayment_date: String,
+    prepayment_amount: String,
+    prepayment_effect: String,
     result: Option<LoanResult>,
     chart_svg: Option<String>,
     active_tab: ViewTab,
     status: String,
+}
+
+impl Default for State {
+    fn default() -> Self {
+        Self {
+            amount: "185000".to_string(),
+            term: "30".to_string(),
+            rate: "3.6".to_string(),
+            spread: "0.0".to_string(),
+            currency: "EUR".to_string(),
+            payment_type: "Annuity".to_string(),
+            rate_mode: "Fix".to_string(),
+            euribor_tenor: "6m".to_string(),
+            euribor_spread: "1.0".to_string(),
+            mixed_fix_years: "2".to_string(),
+            mixed_fix_rate: "3.0".to_string(),
+            mixed_fix_spread: "1.0".to_string(),
+            mixed_euribor_tenor: "6m".to_string(),
+            mixed_euribor_spread: "1.5".to_string(),
+            same_spread: false,
+            prepayment_date: "2027-01-01".to_string(),
+            prepayment_amount: "20000".to_string(),
+            prepayment_effect: "ReduceTerm".to_string(),
+            result: None,
+            chart_svg: None,
+            active_tab: ViewTab::Table,
+            status: String::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -50,6 +107,20 @@ fn update(state: &mut State, message: Message) {
         Message::TermChanged(v) => state.term = v,
         Message::RateChanged(v) => state.rate = v,
         Message::SpreadChanged(v) => state.spread = v,
+        Message::CurrencyChanged(v) => state.currency = v,
+        Message::PaymentTypeChanged(v) => state.payment_type = v,
+        Message::RateModeChanged(v) => state.rate_mode = v,
+        Message::EuriborTenorChanged(v) => state.euribor_tenor = v,
+        Message::EuriborSpreadChanged(v) => state.euribor_spread = v,
+        Message::MixedFixYearsChanged(v) => state.mixed_fix_years = v,
+        Message::MixedFixRateChanged(v) => state.mixed_fix_rate = v,
+        Message::MixedFixSpreadChanged(v) => state.mixed_fix_spread = v,
+        Message::MixedEuriborTenorChanged(v) => state.mixed_euribor_tenor = v,
+        Message::MixedEuriborSpreadChanged(v) => state.mixed_euribor_spread = v,
+        Message::SameSpreadToggled(v) => state.same_spread = v,
+        Message::PrepaymentDateChanged(v) => state.prepayment_date = v,
+        Message::PrepaymentAmountChanged(v) => state.prepayment_amount = v,
+        Message::PrepaymentEffectChanged(v) => state.prepayment_effect = v,
         Message::Calculate => calculate(state),
         Message::ExportCsv => export_csv(state),
         Message::ExportPdf => export_pdf(state),
@@ -64,50 +135,223 @@ fn update(state: &mut State, message: Message) {
 }
 
 fn view(state: &State) -> Element<'_, Message> {
-    let input_panel = column![
-        text("Loan Parameters").size(20),
+    let currencies = vec!["EUR".to_string(), "USD".to_string()];
+    let payment_types = vec!["Annuity".to_string(), "Diff".to_string()];
+    let rate_modes = vec!["Fix".to_string(), "Euribor".to_string(), "Mixed".to_string()];
+    let tenors = vec!["1m".to_string(), "3m".to_string(), "6m".to_string(), "12m".to_string()];
+    let effects = vec!["ReduceTerm".to_string(), "ReducePayment".to_string()];
+
+    let mut input_fields: Vec<Element<'_, Message>> = vec![
+        text("Loan Parameters").size(20).into(),
         row![
-            text("Amount:").width(80),
+            text("Amount:").width(Length::Fixed(120.0)),
             text_input("185000", &state.amount)
                 .on_input(Message::AmountChanged)
-                .width(120),
+                .width(Length::Fixed(150.0)),
         ]
         .spacing(10)
-        .align_y(Alignment::Center),
+        .align_y(Alignment::Center)
+        .into(),
         row![
-            text("Term (yrs):").width(80),
+            text("Term (yrs):").width(Length::Fixed(120.0)),
             text_input("30", &state.term)
                 .on_input(Message::TermChanged)
-                .width(120),
+                .width(Length::Fixed(150.0)),
         ]
         .spacing(10)
-        .align_y(Alignment::Center),
+        .align_y(Alignment::Center)
+        .into(),
         row![
-            text("Rate (%):").width(80),
-            text_input("3.6", &state.rate)
-                .on_input(Message::RateChanged)
-                .width(120),
+            text("Currency:").width(Length::Fixed(120.0)),
+            pick_list(currencies, Some(state.currency.clone()), Message::CurrencyChanged),
         ]
         .spacing(10)
-        .align_y(Alignment::Center),
+        .align_y(Alignment::Center)
+        .into(),
         row![
-            text("Spread (%):").width(80),
-            text_input("0.0", &state.spread)
-                .on_input(Message::SpreadChanged)
-                .width(120),
+            text("Payment:").width(Length::Fixed(120.0)),
+            pick_list(payment_types, Some(state.payment_type.clone()), Message::PaymentTypeChanged),
         ]
         .spacing(10)
-        .align_y(Alignment::Center),
-        button("Calculate").on_press(Message::Calculate),
-        button("Export CSV").on_press(Message::ExportCsv),
-        button("Export PDF").on_press(Message::ExportPdf),
-    ]
-    .spacing(10)
-    .padding(20)
-    .width(280);
+        .align_y(Alignment::Center)
+        .into(),
+        row![
+            text("Rate mode:").width(Length::Fixed(120.0)),
+            pick_list(rate_modes, Some(state.rate_mode.clone()), Message::RateModeChanged),
+        ]
+        .spacing(10)
+        .align_y(Alignment::Center)
+        .into(),
+    ];
+
+    match state.rate_mode.as_str() {
+        "Fix" => {
+            input_fields.push(
+                row![
+                    text("Rate (%):").width(Length::Fixed(120.0)),
+                    text_input("3.6", &state.rate)
+                        .on_input(Message::RateChanged)
+                        .width(Length::Fixed(150.0)),
+                ]
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .into(),
+            );
+            input_fields.push(
+                row![
+                    text("Spread (%):").width(Length::Fixed(120.0)),
+                    text_input("0.0", &state.spread)
+                        .on_input(Message::SpreadChanged)
+                        .width(Length::Fixed(150.0)),
+                ]
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .into(),
+            );
+        }
+        "Euribor" => {
+            input_fields.push(
+                row![
+                    text("Tenor:").width(Length::Fixed(120.0)),
+                    pick_list(tenors.clone(), Some(state.euribor_tenor.clone()), Message::EuriborTenorChanged),
+                ]
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .into(),
+            );
+            input_fields.push(
+                row![
+                    text("Spread (%):").width(Length::Fixed(120.0)),
+                    text_input("1.0", &state.euribor_spread)
+                        .on_input(Message::EuriborSpreadChanged)
+                        .width(Length::Fixed(150.0)),
+                ]
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .into(),
+            );
+        }
+        "Mixed" => {
+            input_fields.push(
+                row![
+                    text("Fixed years:").width(Length::Fixed(120.0)),
+                    text_input("2", &state.mixed_fix_years)
+                        .on_input(Message::MixedFixYearsChanged)
+                        .width(Length::Fixed(150.0)),
+                ]
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .into(),
+            );
+            input_fields.push(
+                row![
+                    text("Fix rate (%):").width(Length::Fixed(120.0)),
+                    text_input("3.0", &state.mixed_fix_rate)
+                        .on_input(Message::MixedFixRateChanged)
+                        .width(Length::Fixed(150.0)),
+                ]
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .into(),
+            );
+            input_fields.push(
+                row![
+                    text("Fix spread (%):").width(Length::Fixed(120.0)),
+                    text_input("1.0", &state.mixed_fix_spread)
+                        .on_input(Message::MixedFixSpreadChanged)
+                        .width(Length::Fixed(150.0)),
+                ]
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .into(),
+            );
+            input_fields.push(
+                row![
+                    text("Euribor tenor:").width(Length::Fixed(120.0)),
+                    pick_list(tenors.clone(), Some(state.mixed_euribor_tenor.clone()), Message::MixedEuriborTenorChanged),
+                ]
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .into(),
+            );
+            if !state.same_spread {
+                input_fields.push(
+                    row![
+                        text("Euribor spr (%):").width(Length::Fixed(120.0)),
+                        text_input("1.5", &state.mixed_euribor_spread)
+                            .on_input(Message::MixedEuriborSpreadChanged)
+                            .width(Length::Fixed(150.0)),
+                    ]
+                    .spacing(10)
+                    .align_y(Alignment::Center)
+                    .into(),
+                );
+            }
+            input_fields.push(
+                row![
+                    text("Same spread:").width(Length::Fixed(120.0)),
+                    checkbox("", state.same_spread)
+                        .on_toggle(Message::SameSpreadToggled),
+                ]
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .into(),
+            );
+        }
+        _ => {}
+    }
+
+    // Prepayment
+    input_fields.push(text("Prepayment").size(16).into());
+    input_fields.push(
+        row![
+            text("Date:").width(Length::Fixed(120.0)),
+            text_input("2027-01-01", &state.prepayment_date)
+                .on_input(Message::PrepaymentDateChanged)
+                .width(Length::Fixed(150.0)),
+        ]
+        .spacing(10)
+        .align_y(Alignment::Center)
+        .into(),
+    );
+    input_fields.push(
+        row![
+            text("Amount:").width(Length::Fixed(120.0)),
+            text_input("20000", &state.prepayment_amount)
+                .on_input(Message::PrepaymentAmountChanged)
+                .width(Length::Fixed(150.0)),
+        ]
+        .spacing(10)
+        .align_y(Alignment::Center)
+        .into(),
+    );
+    input_fields.push(
+        row![
+            text("Effect:").width(Length::Fixed(120.0)),
+            pick_list(effects, Some(state.prepayment_effect.clone()), Message::PrepaymentEffectChanged),
+        ]
+        .spacing(10)
+        .align_y(Alignment::Center)
+        .into(),
+    );
+
+    input_fields.push(
+        row![
+            button("Calculate").on_press(Message::Calculate),
+            button("Export CSV").on_press(Message::ExportCsv),
+            button("Export PDF").on_press(Message::ExportPdf),
+        ]
+        .spacing(10)
+        .into(),
+    );
+
+    let input_panel = Column::from_vec(input_fields)
+        .spacing(8)
+        .padding(20)
+        .width(300);
 
     let results_panel: Element<Message> = if let Some(ref result) = state.result {
-        let sym = "€";
+        let sym = if state.currency == "USD" { "$" } else { "€" };
         let summary = column![
             text("Results").size(20),
             text(format!("Monthly: {}{:.2}", sym, result.monthly_payment.unwrap_or(0.0))),
@@ -186,19 +430,56 @@ fn view(state: &State) -> Element<'_, Message> {
 fn calculate(state: &mut State) {
     let amount = state.amount.parse::<f64>().unwrap_or(100_000.0);
     let term_years = state.term.parse::<u32>().unwrap_or(10);
-    let rate = state.rate.parse::<f64>().unwrap_or(5.0);
-    let spread = state.spread.parse::<f64>().unwrap_or(0.0);
+    let currency = if state.currency == "USD" { Currency::Usd } else { Currency::Eur };
+    let payment_type = if state.payment_type == "Diff" { PaymentType::Diff } else { PaymentType::Annuity };
+    let start_date = chrono::Local::now().date_naive();
+
+    let rate_mode = match state.rate_mode.as_str() {
+        "Fix" => RateMode::Fix {
+            rate: state.rate.parse::<f64>().unwrap_or(3.6),
+            spread: state.spread.parse::<f64>().unwrap_or(0.0),
+        },
+        "Euribor" => RateMode::Euribor {
+            tenor: parse_tenor(&state.euribor_tenor),
+            spread: state.euribor_spread.parse::<f64>().unwrap_or(1.0),
+        },
+        "Mixed" => RateMode::Mixed {
+            fix_years: state.mixed_fix_years.parse::<f64>().unwrap_or(2.0),
+            fix_rate: state.mixed_fix_rate.parse::<f64>().unwrap_or(3.0),
+            fix_spread: state.mixed_fix_spread.parse::<f64>().unwrap_or(1.0),
+            euribor_tenor: parse_tenor(&state.mixed_euribor_tenor),
+            euribor_spread: if state.same_spread {
+                state.mixed_fix_spread.parse::<f64>().unwrap_or(1.0)
+            } else {
+                state.mixed_euribor_spread.parse::<f64>().unwrap_or(1.5)
+            },
+        },
+        _ => RateMode::Fix { rate: 3.6, spread: 0.0 },
+    };
+
+    let mut prepayments = vec![];
+    if let Ok(date) = chrono::NaiveDate::parse_from_str(&state.prepayment_date, "%Y-%m-%d") {
+        let amount = state.prepayment_amount.parse::<f64>().unwrap_or(0.0);
+        if amount > 0.0 {
+            let effect = if state.prepayment_effect == "ReducePayment" {
+                PrepaymentEffect::ReducePayment
+            } else {
+                PrepaymentEffect::ReduceTerm
+            };
+            prepayments.push(Prepayment { date, amount, effect });
+        }
+    }
 
     let params = LoanParams {
         amount,
         term_years,
-        payment_type: PaymentType::Annuity,
-        currency: Currency::Eur,
-        start_date: chrono::Local::now().date_naive(),
-        rate_mode: RateMode::Fix { rate, spread },
-        same_spread: false,
+        payment_type,
+        currency,
+        start_date,
+        rate_mode,
+        same_spread: state.same_spread,
         euribor_curve: vec![],
-        prepayments: vec![],
+        prepayments,
     };
 
     state.result = Some(Calculator::calculate(&params));
@@ -208,7 +489,7 @@ fn calculate(state: &mut State) {
 
 fn generate_chart(state: &mut State) {
     if let Some(ref result) = state.result {
-        state.chart_svg = Some(generate_balance_chart_svg(result));
+        state.chart_svg = Some(generate_stacked_bar_chart_svg(result));
     }
 }
 
@@ -250,7 +531,7 @@ fn export_pdf(state: &mut State) {
         write_line(&current_layer, "Mortgage Loan Report", y);
         y -= line_height * 2.0;
 
-        let sym = "€";
+        let sym = if state.currency == "USD" { "$" } else { "€" };
         write_line(&current_layer, &format!("Monthly Payment: {}{:.2}", sym, result.monthly_payment.unwrap_or(0.0)), y);
         y -= line_height;
         write_line(&current_layer, &format!("Total Principal: {}{:.2}", sym, result.total_principal), y);
@@ -260,6 +541,10 @@ fn export_pdf(state: &mut State) {
         write_line(&current_layer, &format!("Total Paid: {}{:.2}", sym, result.total_paid), y);
         y -= line_height;
         write_line(&current_layer, &format!("Payments Count: {}", result.payments.len()), y);
+        if let Some(idx) = result.principal_exceeds_interest_at {
+            y -= line_height;
+            write_line(&current_layer, &format!("Principal > Interest at payment #{} ({})", idx + 1, result.payments[idx].date), y);
+        }
         y -= line_height * 2.0;
 
         write_line(&current_layer, "Payment Schedule (first 60):", y);
@@ -306,44 +591,54 @@ fn payments_to_csv(payments: &[Payment]) -> String {
     lines.join("\n") + "\n"
 }
 
-fn generate_balance_chart_svg(result: &LoanResult) -> String {
+fn parse_tenor(s: &str) -> EuriborTenor {
+    match s {
+        "1m" => EuriborTenor::OneMonth,
+        "3m" => EuriborTenor::ThreeMonths,
+        "12m" => EuriborTenor::TwelveMonths,
+        _ => EuriborTenor::SixMonths,
+    }
+}
+
+fn generate_stacked_bar_chart_svg(result: &LoanResult) -> String {
     use plotters::prelude::*;
 
     let mut svg_data = String::new();
     {
-        let root = SVGBackend::with_string(&mut svg_data, (800, 600)).into_drawing_area();
+        let root = SVGBackend::with_string(&mut svg_data, (900, 500)).into_drawing_area();
         root.fill(&WHITE).unwrap();
 
         let months: Vec<usize> = (0..result.payments.len()).collect();
-        let balances: Vec<f64> = result.payments.iter().map(|p| p.remaining_balance).collect();
         let principals: Vec<f64> = result.payments.iter().map(|p| p.principal).collect();
         let interests: Vec<f64> = result.payments.iter().map(|p| p.interest).collect();
+        let balances: Vec<f64> = result.payments.iter().map(|p| p.remaining_balance).collect();
 
-        let max_y = balances
+        let max_y = principals
             .iter()
-            .cloned()
-            .chain(principals.iter().cloned())
-            .chain(interests.iter().cloned())
+            .zip(interests.iter())
+            .map(|(p, i)| p + i)
+            .chain(balances.iter().cloned())
             .fold(0.0, f64::max)
             * 1.1;
 
         let mut chart = ChartBuilder::on(&root)
-            .caption("Loan Balance & Payments", ("sans-serif", 30))
+            .caption("Loan Balance & Payments", ("sans-serif", 28))
             .margin(10)
-            .x_label_area_size(40)
+            .x_label_area_size(30)
             .y_label_area_size(50)
             .build_cartesian_2d(0..months.len(), 0.0..max_y)
             .unwrap();
 
         chart.configure_mesh().draw().unwrap();
 
+        // Line chart: principal + interest stacked as area
         chart
             .draw_series(LineSeries::new(
-                months.iter().zip(balances.iter()).map(|(x, y)| (*x, *y)),
-                &BLUE,
+                months.iter().zip(principals.iter()).zip(interests.iter()).map(|((x, p), i)| (*x, p + i)),
+                &RED.mix(0.5),
             ))
             .unwrap()
-            .label("Balance");
+            .label("Total Payment");
 
         chart
             .draw_series(LineSeries::new(
@@ -360,6 +655,29 @@ fn generate_balance_chart_svg(result: &LoanResult) -> String {
             ))
             .unwrap()
             .label("Interest");
+
+        chart
+            .draw_series(LineSeries::new(
+                months.iter().zip(balances.iter()).map(|(x, y)| (*x, *y)),
+                &BLUE,
+            ))
+            .unwrap()
+            .label("Balance");
+
+        // Marker for principal > interest crossing
+        if let Some(cross_idx) = result.principal_exceeds_interest_at {
+            let cross_payment = &result.payments[cross_idx];
+            chart.draw_series(std::iter::once(
+                Circle::new((cross_idx, cross_payment.principal + cross_payment.interest), 6, BLUE.filled()),
+            )).unwrap();
+            chart.draw_series(std::iter::once(
+                Text::new(
+                    format!("Cross #{} ({})\nP={:.0} > I={:.0}", cross_idx + 1, cross_payment.date, cross_payment.principal, cross_payment.interest),
+                    (cross_idx, max_y * 0.92),
+                    ("sans-serif", 12).into_font().color(&BLUE),
+                ),
+            )).unwrap();
+        }
 
         chart
             .configure_series_labels()
