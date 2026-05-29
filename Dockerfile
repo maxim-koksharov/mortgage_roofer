@@ -33,7 +33,15 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --de
 # Cache Rust dependencies with a dummy build
 WORKDIR /build
 COPY Cargo.toml Cargo.lock* ./
-RUN mkdir -p src && echo "fn main() {}" > src/main.rs
+COPY mortgage_core/Cargo.toml mortgage_core/Cargo.toml
+COPY mortgage_cli/Cargo.toml mortgage_cli/Cargo.toml
+COPY mortgage_tui/Cargo.toml mortgage_tui/Cargo.toml
+COPY mortgage_gui/Cargo.toml mortgage_gui/Cargo.toml
+RUN mkdir -p mortgage_core/src mortgage_cli/src mortgage_tui/src mortgage_gui/src \
+    && echo "" > mortgage_core/src/lib.rs \
+    && echo "fn main() {}" > mortgage_cli/src/main.rs \
+    && echo "fn main() {}" > mortgage_tui/src/main.rs \
+    && echo "fn main() {}" > mortgage_gui/src/main.rs
 RUN cargo build --release 2>&1
 RUN rm -rf /build
 
