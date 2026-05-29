@@ -9,6 +9,8 @@ RUN dnf install -y --allowerasing \
     make \
     pkgconfig \
     openssl-devel \
+    fontconfig-devel \
+    freetype-devel \
     python3 \
     vim-common \
     && dnf clean all
