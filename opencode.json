@@ -150,5 +150,6 @@
 			"prompt": "Run cargo fmt --check to verify code formatting without making changes.",
 			"template": "cargo fmt -- --check"
 		}
-	}
+	},
+	"lsp": true
 }
