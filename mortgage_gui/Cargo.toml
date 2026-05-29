@@ -1,0 +1,11 @@
+[package]
+name = "mortgage_gui"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+mortgage_core = { path = "../mortgage_core" }
+iced = { workspace = true }
+plotters = { version = "0.3", default-features = false, features = ["svg_backend", "ab_glyph", "chrono", "line_series", "area_series"] }
+printpdf = { workspace = true }
+serde_json = { workspace = true }
