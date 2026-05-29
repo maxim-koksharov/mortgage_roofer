@@ -4,23 +4,39 @@ x-common: &common
   build:
     context: .
     dockerfile: Dockerfile
+    cache_from:
+      - mortgage_roofer
   image: mortgage_roofer
   working_dir: /workspace
-  user: "${UID}:${GID}"
   environment:
-    - HOME=/workspace/.opencode-home
-    - XDG_CONFIG_HOME=/workspace/.opencode-home/.config
-    - XDG_DATA_HOME=/workspace/.opencode-home/.local/share
-    - XDG_CACHE_HOME=/workspace/.opencode-home/.cache
-    - XDG_STATE_HOME=/workspace/.opencode-home/.local/state
+    - HOME=/home/developer
+    - CONTAINER_UID=${UID}
+    - CONTAINER_GID=${GID}
+    - OPENCODE_DISABLE_AUTO_UPDATES=true
+    - OPENCODE_SNAPSHOT_PATH=/home/developer/.local/share/opencode/snapshot-container
+    - OPENCODE_MAX_THREADS=4
+    - RAYON_NUM_THREADS=4
+    - OMP_NUM_THREADS=4
+    - CARGO_BUILD_JOBS=4
+    - MAKEFLAGS=-j4
   volumes:
     - ".:/workspace:rw"
-    - "${HOME}/.config/opencode:/workspace/.opencode-home/.config/opencode:rw"
-    - "${HOME}/.local/share/opencode:/workspace/.opencode-home/.local/share/opencode:rw"
-    - "${HOME}/.cache/opencode:/workspace/.opencode-home/.cache/opencode:rw"
-    - "${HOME}/.local/state/opencode:/workspace/.opencode-home/.local/state/opencode:rw"
+    - "${HOME}/.config/opencode:/home/developer/.config/opencode:rw"
+    - "${HOME}/.local/share/opencode:/home/developer/.local/share/opencode:rw"
+    - "${HOME}/.cache/opencode:/home/developer/.cache/opencode:rw"
+    - "${HOME}/.local/state/opencode:/home/developer/.local/state/opencode:rw"
   tty: true
   stdin_open: true
+  cap_add:
+    - SYS_PTRACE
+  security_opt:
+    - "apparmor=unconfined"
+  deploy:
+    resources:
+      limits:
+        memory: 5G
+      reservations:
+        memory: 2G
 
 services:
   bash:

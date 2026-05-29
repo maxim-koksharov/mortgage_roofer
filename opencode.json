@@ -1,0 +1,154 @@
+
+{
+	"$schema": "https://opencode.ai/config.json",
+	"instructions": [
+		"AGENTS.md"
+	],
+	"permission": {
+		"": "ask",
+		"grep": "allow",
+		"todowrite": "allow",
+		"read": {
+			"": "allow",
+			".env": "deny",
+			".env.": "deny",
+			"/.env": "deny",
+			"/.env.": "deny",
+			".pem": "deny",
+			".key": "deny",
+			"id_rsa*": "deny",
+			"/id_rsa*": "deny"
+		},
+		"edit": {
+			"*": "ask",
+			"src/": "allow",
+			"tests/": "allow",
+			"Cargo.toml": "allow",
+			"Cargo.lock": "allow",
+			"README.md": "allow",
+			"AGENTS.md": "allow",
+			"opencode.json": "allow",
+			".env": "deny",
+			".env.": "deny",
+			"/.env": "deny",
+			"/.env.": "deny"
+		},
+		"bash": {
+			"*": "ask",
+			"head *": "allow",
+			"tail *": "allow",
+			"mkdir *": "allow",
+			"cat *": "allow",
+			"cp *": "allow",
+			"pwd": "allow",
+			"ls": "allow",
+			"ls *": "allow",
+			"find . *": "allow",
+			"cargo *": "allow",
+			"rustc *": "allow",
+			"rustfmt *": "allow",
+			"cargo fmt *": "allow",
+			"cargo clippy *": "allow",
+			"git status": "allow",
+			"git status *": "allow",
+			"git diff": "allow",
+			"git diff *": "allow",
+			"git log *": "allow",
+			"git show *": "allow",
+			"git branch *": "allow",
+			"git checkout *": "allow",
+			"git switch *": "allow",
+			"git add *": "allow",
+			"git restore *": "allow",
+			"git stash *": "allow",
+			"git commit *": "ask",
+			"git push *": "deny",
+			"git force *": "deny",
+			"git reset --hard *": "deny",
+			"git reset --hard": "deny",
+			"git commit --amend": "deny",
+			"git push --force": "deny",
+			"git push -f": "deny",
+			"rm ": "ask",
+			"rm -r ": "ask",
+			"rm -rf ": "ask",
+			"rm -f ": "ask",
+			"rm -i ": "ask",
+			"rm -d ": "ask",
+			"make": "allow",
+			"make *": "allow",
+			"sudo ": "deny",
+			"su ": "deny",
+			"chmod ": "deny",
+			"chmod 777 ": "deny",
+			"chown ": "deny",
+			"curl ": "ask",
+			"wget ": "ask",
+			"ssh ": "deny",
+			"scp ": "deny",
+			"rsync ": "deny",
+			"cat ~/.ssh/": "deny",
+			"cat $HOME/.ssh/": "deny",
+			"cat ~/.aws/": "deny",
+			"cat $HOME/.aws/": "deny",
+			"cd *": "allow",
+			" ../": "ask",
+			" ~/ ": "ask",
+			" ~/.ssh/": "deny",
+			" $HOME/.ssh/": "deny",
+			"dd ": "deny",
+			"mkfs ": "deny",
+			"mount ": "deny",
+			"umount ": "deny",
+			"kill ": "deny",
+			"pkill ": "deny",
+			"killall ": "deny",
+			"crontab ": "deny",
+			"docker ": "deny",
+			"eval ": "deny",
+			"exec ": "deny"
+		},
+		"external_directory": {
+			"": "deny"
+		},
+		"webfetch": "ask",
+		"websearch": "ask"
+	},
+	"command": {
+		"build": {
+			"description": "Build the Rust crate",
+			"prompt": "Run cargo build to compile the mortgage_roofer crate. Check for compilation errors.",
+			"template": "cargo build --verbose"
+		},
+		"test": {
+			"description": "Run all tests",
+			"prompt": "Run cargo test to execute all unit and integration tests.",
+			"template": "cargo test --verbose"
+		},
+		"run": {
+			"description": "Run the binary",
+			"prompt": "Run cargo run to execute the mortgage_roofer binary and see output.",
+			"template": "cargo run"
+		},
+		"check": {
+			"description": "Check code without compiling",
+			"prompt": "Run cargo check to quickly verify the code compiles without building.",
+			"template": "cargo check --verbose"
+		},
+		"clippy": {
+			"description": "Run clippy lints",
+			"prompt": "Run cargo clippy to check for common mistakes and improve code quality.",
+			"template": "cargo clippy --verbose -- -D warnings"
+		},
+		"fmt": {
+			"description": "Format code",
+			"prompt": "Run cargo fmt to format all Rust source files according to style guidelines.",
+			"template": "cargo fmt"
+		},
+		"fmt-check": {
+			"description": "Check code formatting",
+			"prompt": "Run cargo fmt --check to verify code formatting without making changes.",
+			"template": "cargo fmt -- --check"
+		}
+	}
+}
