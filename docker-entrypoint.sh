@@ -17,11 +17,27 @@ else
     usermod -u "$USER_ID" -g "$GROUP_ID" -d /home/developer developer
 fi
 
+# Create directories only if they don't exist (may be mounted from host)
 mkdir -p /home/developer/.config/opencode
 mkdir -p /home/developer/.local/share/opencode
 mkdir -p /home/developer/.cache/opencode
 mkdir -p /home/developer/.local/state/opencode
-chown -R "$USER_ID:$GROUP_ID" /home/developer
+
+# Only chown directories we create (not mounted)
+for dir in /home/developer/.config/opencode /home/developer/.cache/opencode /home/developer/.local/state/opencode; do
+    if ! mountpoint -q "$dir"; then
+        chown -R "$USER_ID:$GROUP_ID" "$dir"
+    fi
+done
+
+# Handle mounted .local/share/opencode - chown recursively to match container user
+if mountpoint -q /home/developer/.local/share/opencode; then
+    chown -R "$USER_ID:$GROUP_ID" /home/developer/.local/share/opencode
+else
+    chown -R "$USER_ID:$GROUP_ID" /home/developer/.local/share/opencode
+fi
+
+chown "$USER_ID:$GROUP_ID" /home/developer
 
 SNAPSHOT_DIR="/home/developer/.local/share/opencode/snapshot-container"
 
@@ -38,10 +54,5 @@ if [ ! -d "$SNAPSHOT_DIR/.git" ]; then
 fi
 
 cd /workspace
-
-# Only chown the project mount - never touch host home
-if [ -d /workspace ]; then
-    chown -R "$USER_ID:$GROUP_ID" /workspace
-fi
 
 exec gosu developer "$@"

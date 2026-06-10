@@ -19,6 +19,8 @@ x-common: &common
     - MAKEFLAGS=-j4
   volumes:
     - ".:/workspace:rw"
+    - "${HOME}/.config/opencode:/home/developer/.config/opencode:rw"
+    - "${HOME}/.local/share/opencode:/home/developer/.local/share/opencode"
   tty: true
   stdin_open: true
   cap_add:
