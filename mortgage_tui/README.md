@@ -17,18 +17,20 @@ cargo run -p mortgage_tui
 | `Tab` / `↓` | Следующее поле |
 | `Shift+Tab` / `↑` | Предыдущее поле |
 | `←` / `→` | Переключение enum (валюта, тип платежа, режим ставки и т.д.) |
-| Цифры / `.` | Ввод числовых значений |
+| Цифры / `.` / `-` | Ввод числовых значений и дат |
 | `Backspace` | Удаление символа |
-| `Enter` | Расчёт |
-| `Esc` | Выход |
+| `Enter` | Расчёт / Добавить prepayment (на поле AddPrepayment) |
+| `Delete` | Удалить последний prepayment |
+| `Esc` / `q` | Выход |
 
 ### Поля формы
 
 1. **Amount** — сумма кредита
 2. **Term (yrs)** — срок в годах
-3. **Currency** — EUR / USD (переключение ←→)
-4. **Payment type** — Annuity / Diff (переключение ←→)
-5. **Rate mode** — Fix / Euribor / Mixed (переключение ←→)
+3. **Start date** — дата начала (YYYY-MM-DD)
+4. **Currency** — EUR / USD (переключение ←→)
+5. **Payment type** — Annuity / Diff (переключение ←→)
+6. **Rate mode** — Fix / Euribor / Mixed (переключение ←→)
 
 При выборе режима ставки динамически появляются соответствующие поля:
 
@@ -48,10 +50,11 @@ cargo run -p mortgage_tui
 - Mixed euribor spread (%) — скрывается при same_spread
 - Same spread — Yes / No (переключение ←→)
 
-**Prepayment:**
+**Prepayments (множественные):**
 - Prepayment date — YYYY-MM-DD
 - Prepayment amount
 - Prepayment effect — ReduceTerm / ReducePayment
+- Add prepayment — Enter для добавления, Delete для удаления последнего
 
 ### Результаты
 
@@ -73,9 +76,46 @@ cargo run -p mortgage_tui
 
 | Клавиша | Действие |
 |---------|----------|
-| `Esc` / `q` | Вернуться к форме |
+| `Esc` / `q` | Вернуться к форме / закрыть анализ |
 | `S` | Экспортировать таблицу в CSV (`/tmp/mortgage_tui_export.csv`) |
+| `Y` | Переключить годовую сводку |
+| `R` | Анализ чувствительности (±2%, ±1%, ±0.5%, 0%) |
+| `B` | Break-even vs аренда (автоматически 0.5% от суммы) |
+| `W` | Сохранить сессию (`/tmp/mortgage_session.json`) |
+| `L` | Загрузить сессию |
 | `↑` / `↓` | Прокрутка таблицы |
+
+### Годовая сводка
+
+При нажатии `Y` отображается годовая агрегация:
+- Year — год
+- Payment — сумма платежей за год
+- Principal — погашенный основной долг
+- Interest — уплаченные проценты
+- Months — количество платежей
+- Balance — остаток на конец года
+
+### Анализ чувствительности
+
+При нажатии `R` отображается таблица:
+- Delta — изменение ставки
+- Rate % — эффективная ставка
+- Monthly — ежемесячный платёж
+- Interest — общие проценты
+- Total Paid — общая выплата
+
+### Break-Even vs Rent
+
+При нажатии `B` отображается:
+- Monthly rent — ежемесячная аренда (0.5% от суммы)
+- Monthly mortgage — ежемесячный платёж
+- Total interest — общие проценты
+- Break-even — через сколько месяцев покупка окупится
+
+### Сессии
+
+- `W` — сохраняет текущие параметры и результаты в `/tmp/mortgage_session.json`
+- `L` — загружает сессию из `/tmp/mortgage_session.json`
 
 ### Валидация
 
