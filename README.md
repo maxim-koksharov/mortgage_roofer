@@ -33,7 +33,7 @@
 ### Анализ
 - **Yearly Summary** — годовая агрегация платежей (платёж, основной долг, проценты, остаток)
 - **Rate Sensitivity** — таблица изменения платежей при ±0.5%, ±1%, ±2% ставки
-- **Break-Even vs Rent** — расчёт окупаемости покупки vs аренда (с учётом ежемесячной аренды)
+- **Break-Even vs Rent** — расчёт окупаемости покупки vs аренда (с учётом ежемесячной аренды и upfront costs)
 
 ### Графики (GUI)
 - **Stacked Bar** — Principal (зелёный) + Interest (красный) + маркер пересечения
@@ -101,8 +101,9 @@ cargo run -p mortgage_cli -- -a 100000 -t 10 -r 5 --prepayment "2027-01-01:20000
 # Анализ чувствительности
 cargo run -p mortgage_cli -- -a 200000 -t 20 -r 4.5 --sensitivity "-2,-1,0,1,2"
 
-# Break-even vs аренда
-cargo run -p mortgage_cli -- -a 200000 -t 20 -r 4.5 --break-even-rent 1000
+# Break-even vs аренда (с upfront costs)
+cargo run -p mortgage_cli -- -a 200000 -t 20 -r 4.5 --break-even-rent 1000 --upfront-percent 5
+cargo run -p mortgage_cli -- -a 200000 -t 20 -r 4.5 --break-even-rent 1000 --upfront-cost 10000
 
 # Сохранение сессии
 cargo run -p mortgage_cli -- -a 100000 -t 10 -r 5 --save session.json
@@ -141,12 +142,13 @@ cargo run -p mortgage_gui
 
 ## Тесты
 
-70 тестов покрывают:
+73 теста покрывают:
 - Unit-тесты калькулятора (11)
 - Edge cases (19)
 - Serde round-trip (19)
 - Property-based tests с proptest (8)
 - CLI integration (10)
+- Break-even (3)
 - Doc tests (3)
 
 ## Документация

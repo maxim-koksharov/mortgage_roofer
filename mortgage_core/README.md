@@ -66,6 +66,8 @@ pub struct LoanParams {
     pub same_spread: bool,
     pub euribor_curve: Vec<EuriborPoint>,
     pub prepayments: Vec<Prepayment>,
+    pub upfront_cost: Option<f64>,
+    pub upfront_percent: Option<f64>,
 }
 ```
 
@@ -128,6 +130,7 @@ let monthly_rent = 1000.0;
 let be = break_even_analysis(&params, monthly_rent);
 
 println!("Monthly mortgage: {:.2}", be.monthly_cost);
+println!("Upfront costs: {:.2}", be.upfront_costs);
 if let (Some(months), Some(years)) = (be.break_even_months, be.break_even_years) {
     println!("Break-even: {} months ({:.1} years)", months, years);
 }
@@ -163,7 +166,7 @@ use mortgage_core::euribor;
 
 let rate = euribor::fetch_euribor(EuriborTenor::SixMonths)?;
 // или с кэшем
-let mut cache = euribor::EuriborCache::new();
+let mut cache = euribor::EuriborCache::default();
 let rate = cache.get_or_fetch(EuriborTenor::SixMonths)?;
 ```
 
@@ -191,8 +194,7 @@ let params: LoanParams = serde_json::from_str(&json)?;
 ## Валидация
 
 ```rust
-let errors = params.validate();
-if !errors.is_empty() {
+if let Err(errors) = params.validate() {
     for e in &errors {
         eprintln!("Validation error: {}", e);
     }
@@ -206,3 +208,4 @@ if !errors.is_empty() {
 - Spread >= 0
 - Prepayment date >= start_date
 - Prepayment amount > 0
+- Upfront cost/percent non-negative (and not both specified)
