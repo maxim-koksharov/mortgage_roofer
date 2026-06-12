@@ -131,6 +131,8 @@ impl App {
                     let count = self.prepayments.len();
                     ("Add prepayment", format!("[Enter to add, {} saved]", count))
                 }
+                Field::UpfrontCost => ("Upfront cost", self.upfront_cost.clone()),
+                Field::UpfrontPercent => ("Upfront %", self.upfront_percent.clone()),
             };
 
             let hint = if is_sel {
@@ -148,6 +150,8 @@ impl App {
                     Field::EuriborRate => " [type rate]",
                     Field::AddEuriborPoint => " [Enter=add, Del=remove last]",
                     Field::StartDate => " [YYYY-MM-DD]",
+                    Field::UpfrontCost => " [fixed amount or 0]",
+                    Field::UpfrontPercent => " [percent or 0]",
                     _ => " [type]",
                 }
             } else {
@@ -257,6 +261,7 @@ impl App {
                         let text = Text::from(vec![
                             Line::from(format!("Monthly rent:      {:.2}", be.monthly_rent)),
                             Line::from(format!("Monthly mortgage:  {:.2}", be.monthly_cost)),
+                            Line::from(format!("Upfront costs:     {:.2}", be.upfront_costs)),
                             Line::from(format!("Total interest:    {:.2}", be.total_interest)),
                             Line::from(""),
                             if let (Some(months), Some(years)) =
@@ -442,7 +447,7 @@ impl App {
             ]),
             Line::from(vec![
                 Span::styled("q / Esc", Style::default().fg(Color::Cyan)),
-                Span::raw("             Quit (if results exist)"),
+                Span::raw("             Quit"),
             ]),
             Line::from(vec![
                 Span::styled("h", Style::default().fg(Color::Cyan)),

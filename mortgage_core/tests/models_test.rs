@@ -25,6 +25,8 @@ fn sample_params() -> LoanParams {
             amount: 50_000.0,
             effect: PrepaymentEffect::ReduceTerm,
         }],
+        upfront_cost: None,
+        upfront_percent: None,
     }
 }
 
@@ -198,6 +200,8 @@ fn test_loan_result_serde_roundtrip() {
         same_spread: false,
         euribor_curve: vec![],
         prepayments: vec![],
+        upfront_cost: None,
+        upfront_percent: None,
     };
 
     let result = Calculator::calculate(&params).unwrap();

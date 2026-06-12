@@ -18,6 +18,8 @@ use crate::models::Payment;
 ///     same_spread: false,
 ///     euribor_curve: vec![],
 ///     prepayments: vec![],
+///     upfront_cost: None,
+///     upfront_percent: None,
 /// };
 ///
 /// let result = Calculator::calculate(&params).unwrap();

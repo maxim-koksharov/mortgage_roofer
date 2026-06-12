@@ -7,7 +7,7 @@ use ratatui::DefaultTerminal;
 
 impl App {
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> std::io::Result<()> {
-        loop {
+        while !self.should_exit {
             terminal.draw(|frame| self.draw(frame))?;
 
             if let Event::Key(key) = event::read()?
@@ -23,23 +23,16 @@ impl App {
                     }
                 }
             }
-
-            if self.screen == Screen::Form && self.result.is_some() && self.popup_msg.is_none() {}
         }
+        Ok(())
     }
 
     fn handle_form(&mut self, code: KeyCode) {
         match code {
-            KeyCode::Tab => {
+            KeyCode::Tab | KeyCode::Down => {
                 self.selected = (self.selected + 1) % self.fields.len();
             }
-            KeyCode::BackTab => {
-                self.selected = (self.selected + self.fields.len() - 1) % self.fields.len();
-            }
-            KeyCode::Down => {
-                self.selected = (self.selected + 1) % self.fields.len();
-            }
-            KeyCode::Up => {
+            KeyCode::BackTab | KeyCode::Up => {
                 self.selected = (self.selected + self.fields.len() - 1) % self.fields.len();
             }
             KeyCode::Char(c) if c.is_numeric() || c == '.' || c == '-' => {
@@ -51,29 +44,9 @@ impl App {
             KeyCode::Left => self.cycle_enum(-1),
             KeyCode::Right => self.cycle_enum(1),
             KeyCode::Enter => {
-                if self.fields[self.selected] == Field::EuriborFetchButton {
-                    if let Err(e) = self.fetch_euribor() {
-                        self.popup_msg = Some(format!("Error: {}", e));
-                        self.screen = Screen::Popup(self.popup_msg.clone().unwrap());
-                    } else {
-                        self.popup_msg = self.popup_msg.clone();
-                        self.screen = Screen::Popup(self.popup_msg.clone().unwrap_or_default());
-                    }
-                } else if self.fields[self.selected] == Field::AddEuriborPoint {
-                    if let Err(e) = self.add_euribor_point() {
-                        self.popup_msg = Some(format!("Error: {}", e));
-                        self.screen = Screen::Popup(self.popup_msg.clone().unwrap());
-                    }
-                } else if self.fields[self.selected] == Field::AddPrepayment {
-                    if let Err(e) = self.add_prepayment() {
-                        self.popup_msg = Some(format!("Error: {}", e));
-                        self.screen = Screen::Popup(self.popup_msg.clone().unwrap());
-                    }
-                } else if let Err(e) = self.calculate() {
+                if let Err(e) = self.handle_enter() {
                     self.popup_msg = Some(format!("Error: {}", e));
                     self.screen = Screen::Popup(self.popup_msg.clone().unwrap());
-                } else {
-                    self.screen = Screen::Results;
                 }
             }
             KeyCode::Delete => {
@@ -86,14 +59,29 @@ impl App {
             KeyCode::Char('h') | KeyCode::Char('H') => {
                 self.screen = Screen::Help;
             }
-            KeyCode::Esc | KeyCode::Char('q') if self.result.is_some() => {}
+            KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
+                self.should_exit = true;
+            }
             _ => {}
+        }
+    }
+
+    fn handle_enter(&mut self) -> Result<(), String> {
+        match self.fields[self.selected] {
+            Field::EuriborFetchButton => self.fetch_euribor(),
+            Field::AddEuriborPoint => self.add_euribor_point(),
+            Field::AddPrepayment => self.add_prepayment(),
+            _ => {
+                self.calculate()?;
+                self.screen = Screen::Results;
+                Ok(())
+            }
         }
     }
 
     fn handle_results(&mut self, code: KeyCode) {
         match code {
-            KeyCode::Esc | KeyCode::Char('q') => {
+            KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
                 if self.show_analysis.is_some() {
                     self.show_analysis = None;
                 } else {
@@ -149,7 +137,11 @@ impl App {
 
     fn handle_help(&mut self, code: KeyCode) {
         match code {
-            KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('h') | KeyCode::Char('H') => {
+            KeyCode::Esc
+            | KeyCode::Char('q')
+            | KeyCode::Char('Q')
+            | KeyCode::Char('h')
+            | KeyCode::Char('H') => {
                 if self.result.is_some() {
                     self.screen = Screen::Results;
                 } else {

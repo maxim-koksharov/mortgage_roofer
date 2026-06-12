@@ -37,12 +37,15 @@ pub enum Field {
     PrepaymentAmount,
     PrepaymentEffect,
     AddPrepayment,
+    UpfrontCost,
+    UpfrontPercent,
 }
 
 pub struct App {
     pub screen: Screen,
     pub fields: Vec<Field>,
     pub selected: usize,
+    pub should_exit: bool,
 
     pub amount: String,
     pub term: String,
@@ -64,6 +67,8 @@ pub struct App {
     pub prepayment_amount: String,
     pub prepayment_effect: usize,
     pub prepayments: Vec<Prepayment>,
+    pub upfront_cost: String,
+    pub upfront_percent: String,
 
     pub euribor_cache: EuriborCache,
     pub euribor_curve: Vec<EuriborPoint>,
@@ -90,6 +95,7 @@ impl App {
             screen: Screen::Form,
             fields: vec![],
             selected: 0,
+            should_exit: false,
             amount: "185000".to_string(),
             term: "30".to_string(),
             start_date: chrono::Local::now()
@@ -113,7 +119,9 @@ impl App {
             prepayment_amount: "20000".to_string(),
             prepayment_effect: 0,
             prepayments: vec![],
-            euribor_cache: EuriborCache::new(),
+            upfront_cost: "0".to_string(),
+            upfront_percent: "5".to_string(),
+            euribor_cache: EuriborCache::default(),
             euribor_curve: vec![],
             euribor_date: chrono::Local::now()
                 .date_naive()
@@ -167,139 +175,110 @@ impl App {
             }
             _ => {}
         }
-        f.push(Field::PrepaymentDate);
-        f.push(Field::PrepaymentAmount);
-        f.push(Field::PrepaymentEffect);
-        f.push(Field::AddPrepayment);
+        f.extend_from_slice(&[
+            Field::PrepaymentDate,
+            Field::PrepaymentAmount,
+            Field::PrepaymentEffect,
+            Field::AddPrepayment,
+            Field::UpfrontCost,
+            Field::UpfrontPercent,
+        ]);
         self.fields = f;
         if self.selected >= self.fields.len() {
             self.selected = self.fields.len().saturating_sub(1);
         }
     }
 
+    fn field_mut(&mut self, field: Field) -> Option<&mut String> {
+        match field {
+            Field::Amount => Some(&mut self.amount),
+            Field::Term => Some(&mut self.term),
+            Field::StartDate => Some(&mut self.start_date),
+            Field::FixRate => Some(&mut self.fix_rate),
+            Field::FixSpread => Some(&mut self.fix_spread),
+            Field::EuriborSpread => Some(&mut self.euribor_spread),
+            Field::EuriborDate => Some(&mut self.euribor_date),
+            Field::EuriborRate => Some(&mut self.euribor_rate),
+            Field::MixedFixYears => Some(&mut self.mixed_fix_years),
+            Field::MixedFixRate => Some(&mut self.mixed_fix_rate),
+            Field::MixedFixSpread => Some(&mut self.mixed_fix_spread),
+            Field::MixedEuriborSpread => Some(&mut self.mixed_euribor_spread),
+            Field::PrepaymentDate => Some(&mut self.prepayment_date),
+            Field::PrepaymentAmount => Some(&mut self.prepayment_amount),
+            Field::UpfrontCost => Some(&mut self.upfront_cost),
+            Field::UpfrontPercent => Some(&mut self.upfront_percent),
+            _ => None,
+        }
+    }
+
     pub fn edit_text(&mut self, c: char) {
-        match self.fields[self.selected] {
-            Field::Amount => self.amount.push(c),
-            Field::Term => self.term.push(c),
-            Field::StartDate => self.start_date.push(c),
-            Field::FixRate => self.fix_rate.push(c),
-            Field::FixSpread => self.fix_spread.push(c),
-            Field::EuriborSpread => self.euribor_spread.push(c),
-            Field::EuriborDate => self.euribor_date.push(c),
-            Field::EuriborRate => self.euribor_rate.push(c),
-            Field::MixedFixYears => self.mixed_fix_years.push(c),
-            Field::MixedFixRate => self.mixed_fix_rate.push(c),
-            Field::MixedFixSpread => self.mixed_fix_spread.push(c),
-            Field::MixedEuriborSpread => self.mixed_euribor_spread.push(c),
-            Field::PrepaymentDate => self.prepayment_date.push(c),
-            Field::PrepaymentAmount => self.prepayment_amount.push(c),
-            _ => {}
+        if let Some(field) = self.field_mut(self.fields[self.selected]) {
+            field.push(c);
         }
     }
 
     pub fn backspace(&mut self) {
-        match self.fields[self.selected] {
-            Field::Amount => {
-                self.amount.pop();
-            }
-            Field::Term => {
-                self.term.pop();
-            }
-            Field::StartDate => {
-                self.start_date.pop();
-            }
-            Field::FixRate => {
-                self.fix_rate.pop();
-            }
-            Field::FixSpread => {
-                self.fix_spread.pop();
-            }
-            Field::EuriborSpread => {
-                self.euribor_spread.pop();
-            }
-            Field::EuriborDate => {
-                self.euribor_date.pop();
-            }
-            Field::EuriborRate => {
-                self.euribor_rate.pop();
-            }
-            Field::MixedFixYears => {
-                self.mixed_fix_years.pop();
-            }
-            Field::MixedFixRate => {
-                self.mixed_fix_rate.pop();
-            }
-            Field::MixedFixSpread => {
-                self.mixed_fix_spread.pop();
-            }
-            Field::MixedEuriborSpread => {
-                self.mixed_euribor_spread.pop();
-            }
-            Field::PrepaymentDate => {
-                self.prepayment_date.pop();
-            }
-            Field::PrepaymentAmount => {
-                self.prepayment_amount.pop();
-            }
-            _ => {}
+        if let Some(field) = self.field_mut(self.fields[self.selected]) {
+            field.pop();
         }
     }
 
     pub fn cycle_enum(&mut self, delta: i8) {
         let current = self.fields[self.selected];
-        match current {
-            Field::Currency => {
-                self.currency = ((self.currency as i8 + delta).rem_euclid(2)) as usize;
-            }
-            Field::PaymentType => {
-                self.payment_type = ((self.payment_type as i8 + delta).rem_euclid(2)) as usize;
-            }
-            Field::RateMode => {
-                let old = self.rate_mode;
-                self.rate_mode = ((self.rate_mode as i8 + delta).rem_euclid(3)) as usize;
-                if old != self.rate_mode {
-                    self.rebuild_fields();
-                }
-            }
-            Field::EuriborTenor => {
-                self.euribor_tenor = ((self.euribor_tenor as i8 + delta).rem_euclid(4)) as usize;
-            }
-            Field::MixedEuriborTenor => {
-                self.mixed_euribor_tenor =
-                    ((self.mixed_euribor_tenor as i8 + delta).rem_euclid(4)) as usize;
-            }
+        let len = match current {
+            Field::Currency | Field::PaymentType => 2,
+            Field::RateMode => 3,
+            Field::EuriborTenor | Field::MixedEuriborTenor => 4,
+            Field::PrepaymentEffect => 2,
             Field::SameSpread => {
                 self.same_spread = !self.same_spread;
+                return;
             }
-            Field::PrepaymentEffect => {
-                self.prepayment_effect =
-                    ((self.prepayment_effect as i8 + delta).rem_euclid(2)) as usize;
-            }
-            _ => {}
+            _ => return,
+        };
+
+        let value = match current {
+            Field::Currency => &mut self.currency,
+            Field::PaymentType => &mut self.payment_type,
+            Field::RateMode => &mut self.rate_mode,
+            Field::EuriborTenor => &mut self.euribor_tenor,
+            Field::MixedEuriborTenor => &mut self.mixed_euribor_tenor,
+            Field::PrepaymentEffect => &mut self.prepayment_effect,
+            _ => return,
+        };
+
+        let old = *value;
+        *value = ((*value as i8 + delta).rem_euclid(len)) as usize;
+        if current == Field::RateMode && old != *value {
+            self.rebuild_fields();
+        }
+    }
+
+    fn euribor_tenor(&self) -> EuriborTenor {
+        tenor_from_idx(if self.rate_mode == 2 {
+            self.mixed_euribor_tenor
+        } else {
+            self.euribor_tenor
+        })
+    }
+
+    fn euribor_start_date(&self) -> NaiveDate {
+        let start_date = NaiveDate::parse_from_str(&self.start_date, "%Y-%m-%d")
+            .unwrap_or_else(|_| chrono::Local::now().date_naive());
+        if self.rate_mode == 2 {
+            let fix_years = self.mixed_fix_years.parse::<f64>().unwrap_or(2.0);
+            start_date + chrono::Duration::days((fix_years * 365.25) as i64)
+        } else {
+            start_date
         }
     }
 
     pub fn fetch_euribor(&mut self) -> Result<(), String> {
-        let tenor = if self.rate_mode == 2 {
-            tenor_from_idx(self.mixed_euribor_tenor)
-        } else {
-            tenor_from_idx(self.euribor_tenor)
-        };
-
+        let tenor = self.euribor_tenor();
         match self.euribor_cache.get_or_fetch(tenor) {
             Ok(rate) => {
-                let start_date = NaiveDate::parse_from_str(&self.start_date, "%Y-%m-%d")
-                    .unwrap_or_else(|_| chrono::Local::now().date_naive());
-
-                let fix_end = if self.rate_mode == 2 {
-                    let fix_years = self.mixed_fix_years.parse::<f64>().unwrap_or(2.0);
-                    start_date + chrono::Duration::days((fix_years * 365.25) as i64)
-                } else {
-                    start_date
-                };
-
                 self.euribor_curve.push(EuriborPoint {
-                    date_from: fix_end,
+                    date_from: self.euribor_start_date(),
                     rate,
                 });
                 self.euribor_curve.sort_by_key(|p| p.date_from);
@@ -393,22 +372,12 @@ impl App {
         let euribor_curve = if (self.rate_mode == 1 || self.rate_mode == 2)
             && self.euribor_curve.is_empty()
         {
-            let tenor = if self.rate_mode == 2 {
-                tenor_from_idx(self.mixed_euribor_tenor)
-            } else {
-                tenor_from_idx(self.euribor_tenor)
-            };
+            let tenor = self.euribor_tenor();
             match self.euribor_cache.get_or_fetch(tenor) {
                 Ok(rate) => {
-                    let fix_end = if self.rate_mode == 2 {
-                        let fix_years = self.mixed_fix_years.parse::<f64>().unwrap_or(2.0);
-                        start_date + chrono::Duration::days((fix_years * 365.25) as i64)
-                    } else {
-                        start_date
-                    };
                     self.popup_msg = Some(format!("Auto-fetched Euribor {}: {:.3}%", tenor, rate));
                     vec![EuriborPoint {
-                        date_from: fix_end,
+                        date_from: self.euribor_start_date(),
                         rate,
                     }]
                 }
@@ -421,6 +390,12 @@ impl App {
             self.euribor_curve.clone()
         };
 
+        let upfront_cost = parse_optional(&self.upfront_cost)?;
+        let upfront_percent = parse_optional(&self.upfront_percent)?;
+        if upfront_cost.is_some() && upfront_percent.is_some() {
+            return Err("Specify upfront cost or percent, not both".to_string());
+        }
+
         let params = LoanParams {
             amount,
             term_years,
@@ -431,6 +406,8 @@ impl App {
             same_spread: self.same_spread,
             euribor_curve,
             prepayments: self.prepayments.clone(),
+            upfront_cost,
+            upfront_percent,
         };
 
         let result = Calculator::calculate(&params).map_err(|e| e.to_string())?;
@@ -499,6 +476,16 @@ impl App {
                 self.screen = Screen::Popup(self.popup_msg.clone().unwrap());
             }
         }
+    }
+}
+
+fn parse_optional(s: &str) -> Result<Option<f64>, String> {
+    if s.is_empty() || s == "0" {
+        Ok(None)
+    } else {
+        s.parse::<f64>()
+            .map(Some)
+            .map_err(|_| "Invalid number".to_string())
     }
 }
 

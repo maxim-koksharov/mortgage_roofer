@@ -3,36 +3,13 @@ use mortgage_core::models::*;
 use mortgage_core::{Calculator, payments_to_csv};
 use std::fs;
 use std::path::PathBuf;
-
-#[derive(Debug, Clone, ValueEnum)]
-enum CliPaymentType {
-    Annuity,
-    Diff,
-}
-
-#[derive(Debug, Clone, ValueEnum)]
-enum CliCurrency {
-    Usd,
-    Eur,
-}
+use std::str::FromStr;
 
 #[derive(Debug, Clone, ValueEnum)]
 enum CliRateMode {
     Fix,
     Euribor,
     Mixed,
-}
-
-#[derive(Debug, Clone, ValueEnum)]
-enum CliEuriborTenor {
-    #[value(name = "1m")]
-    OneMonth,
-    #[value(name = "3m")]
-    ThreeMonths,
-    #[value(name = "6m")]
-    SixMonths,
-    #[value(name = "12m")]
-    TwelveMonths,
 }
 
 #[derive(Parser, Debug)]
@@ -48,12 +25,12 @@ struct Args {
     term: Option<u32>,
 
     /// Payment type: annuity or diff
-    #[arg(short, long, value_enum)]
-    payment_type: Option<CliPaymentType>,
+    #[arg(short, long)]
+    payment_type: Option<String>,
 
     /// Currency: usd or eur
-    #[arg(short = 'u', long, value_enum)]
-    currency: Option<CliCurrency>,
+    #[arg(short = 'u', long)]
+    currency: Option<String>,
 
     /// Start date (YYYY-MM-DD)
     #[arg(long)]
@@ -76,8 +53,8 @@ struct Args {
     fix_years: Option<f64>,
 
     /// Euribor tenor (for euribor or mixed mode)
-    #[arg(long, value_enum)]
-    euribor_tenor: Option<CliEuriborTenor>,
+    #[arg(long)]
+    euribor_tenor: Option<String>,
 
     /// Euribor spread (for euribor or mixed mode)
     #[arg(long)]
@@ -86,6 +63,14 @@ struct Args {
     /// Use same spread for fixed and euribor periods
     #[arg(long)]
     same_spread: bool,
+
+    /// Upfront costs for break-even analysis (fixed amount)
+    #[arg(long)]
+    upfront_cost: Option<f64>,
+
+    /// Upfront costs for break-even analysis (percent of loan amount)
+    #[arg(long)]
+    upfront_percent: Option<f64>,
 
     /// Path to JSON config file
     #[arg(short, long)]
@@ -146,33 +131,7 @@ fn main() {
         };
 
         for prep_str in &args.prepayments {
-            let parts: Vec<&str> = prep_str.split(':').collect();
-            if parts.len() != 3 {
-                eprintln!(
-                    "Invalid prepayment format: {}. Use YYYY-MM-DD:amount:effect",
-                    prep_str
-                );
-                std::process::exit(1);
-            }
-            let date = parts[0]
-                .parse::<chrono::NaiveDate>()
-                .unwrap_or_else(|_| panic!("Invalid prepayment date: {}", parts[0]));
-            let amount: f64 = parts[1]
-                .parse()
-                .unwrap_or_else(|_| panic!("Invalid prepayment amount: {}", parts[1]));
-            let effect = match parts[2] {
-                "ReduceTerm" => PrepaymentEffect::ReduceTerm,
-                "ReducePayment" => PrepaymentEffect::ReducePayment,
-                _ => panic!(
-                    "Invalid prepayment effect: {}. Use ReduceTerm or ReducePayment",
-                    parts[2]
-                ),
-            };
-            params.prepayments.push(Prepayment {
-                date,
-                amount,
-                effect,
-            });
+            params.prepayments.push(parse_prepayment(prep_str));
         }
 
         let result = match Calculator::calculate(&params) {
@@ -197,7 +156,7 @@ fn main() {
             .filter_map(|s| s.trim().parse().ok())
             .collect();
         let points = mortgage_core::sensitivity_analysis(&params, &deltas);
-        print_sensitivity(&params, &points);
+        print_sensitivity(&points);
     }
 
     if let Some(rent) = args.break_even_rent {
@@ -226,26 +185,57 @@ fn main() {
     }
 }
 
+fn parse_prepayment(prep_str: &str) -> Prepayment {
+    let parts: Vec<&str> = prep_str.split(':').collect();
+    if parts.len() != 3 {
+        eprintln!(
+            "Invalid prepayment format: {}. Use YYYY-MM-DD:amount:effect",
+            prep_str
+        );
+        std::process::exit(1);
+    }
+    let date = parts[0]
+        .parse::<chrono::NaiveDate>()
+        .unwrap_or_else(|_| panic!("Invalid prepayment date: {}", parts[0]));
+    let amount: f64 = parts[1]
+        .parse()
+        .unwrap_or_else(|_| panic!("Invalid prepayment amount: {}", parts[1]));
+    let effect = parts[2].parse::<PrepaymentEffect>().unwrap_or_else(|_| {
+        panic!(
+            "Invalid prepayment effect: {}. Use ReduceTerm or ReducePayment",
+            parts[2]
+        )
+    });
+    Prepayment {
+        date,
+        amount,
+        effect,
+    }
+}
+
+fn parse_or<T: FromStr>(value: Option<&String>, default: T) -> T
+where
+    T::Err: std::fmt::Display,
+{
+    match value {
+        Some(s) => s
+            .parse::<T>()
+            .unwrap_or_else(|e| panic!("Invalid value '{}': {}", s, e)),
+        None => default,
+    }
+}
+
 fn build_params_from_args(args: &Args) -> LoanParams {
     let amount = args.amount.unwrap_or(100_000.0);
     let term_years = args.term.unwrap_or(10);
-    let payment_type = match args
-        .payment_type
-        .as_ref()
-        .unwrap_or(&CliPaymentType::Annuity)
-    {
-        CliPaymentType::Annuity => PaymentType::Annuity,
-        CliPaymentType::Diff => PaymentType::Diff,
-    };
-    let currency = match args.currency.as_ref().unwrap_or(&CliCurrency::Eur) {
-        CliCurrency::Usd => Currency::Usd,
-        CliCurrency::Eur => Currency::Eur,
-    };
+    let payment_type = parse_or(args.payment_type.as_ref(), PaymentType::Annuity);
+    let currency = parse_or(args.currency.as_ref(), Currency::Eur);
     let start_date = args
         .start_date
         .as_ref()
         .and_then(|s| s.parse::<chrono::NaiveDate>().ok())
         .unwrap_or_else(|| chrono::Local::now().date_naive());
+    let euribor_tenor = parse_or(args.euribor_tenor.as_ref(), EuriborTenor::SixMonths);
 
     let rate_mode = match args.rate_mode.as_ref().unwrap_or(&CliRateMode::Fix) {
         CliRateMode::Fix => RateMode::Fix {
@@ -253,32 +243,14 @@ fn build_params_from_args(args: &Args) -> LoanParams {
             spread: args.spread.unwrap_or(0.0),
         },
         CliRateMode::Euribor => RateMode::Euribor {
-            tenor: args
-                .euribor_tenor
-                .as_ref()
-                .map(|t| match t {
-                    CliEuriborTenor::OneMonth => EuriborTenor::OneMonth,
-                    CliEuriborTenor::ThreeMonths => EuriborTenor::ThreeMonths,
-                    CliEuriborTenor::SixMonths => EuriborTenor::SixMonths,
-                    CliEuriborTenor::TwelveMonths => EuriborTenor::TwelveMonths,
-                })
-                .unwrap_or_default(),
+            tenor: euribor_tenor,
             spread: args.spread.unwrap_or(0.0),
         },
         CliRateMode::Mixed => RateMode::Mixed {
             fix_years: args.fix_years.unwrap_or(1.0),
             fix_rate: args.rate.unwrap_or(3.0),
             fix_spread: args.spread.unwrap_or(1.0),
-            euribor_tenor: args
-                .euribor_tenor
-                .as_ref()
-                .map(|t| match t {
-                    CliEuriborTenor::OneMonth => EuriborTenor::OneMonth,
-                    CliEuriborTenor::ThreeMonths => EuriborTenor::ThreeMonths,
-                    CliEuriborTenor::SixMonths => EuriborTenor::SixMonths,
-                    CliEuriborTenor::TwelveMonths => EuriborTenor::TwelveMonths,
-                })
-                .unwrap_or_default(),
+            euribor_tenor,
             euribor_spread: args.euribor_spread.unwrap_or(2.0),
         },
     };
@@ -293,6 +265,8 @@ fn build_params_from_args(args: &Args) -> LoanParams {
         same_spread: args.same_spread,
         euribor_curve: vec![],
         prepayments: vec![],
+        upfront_cost: args.upfront_cost,
+        upfront_percent: args.upfront_percent,
     }
 }
 
@@ -363,7 +337,7 @@ fn print_yearly(result: &LoanResult) {
     }
 }
 
-fn print_sensitivity(_params: &LoanParams, points: &[mortgage_core::SensitivityPoint]) {
+fn print_sensitivity(points: &[mortgage_core::SensitivityPoint]) {
     println!("=== Rate Sensitivity Analysis ===");
     println!(
         "{:>10} {:>10} {:>14} {:>14} {:>14}",
@@ -386,6 +360,7 @@ fn print_break_even(be: &mortgage_core::BreakEvenResult) {
     println!("=== Break-Even vs Rent ===");
     println!("Monthly rent:      {:.2}", be.monthly_rent);
     println!("Monthly mortgage:  {:.2}", be.monthly_cost);
+    println!("Upfront costs:     {:.2}", be.upfront_costs);
     println!("Total interest:    {:.2}", be.total_interest);
     if let (Some(months), Some(years)) = (be.break_even_months, be.break_even_years) {
         println!("Break-even:        {} months ({:.1} years)", months, years);

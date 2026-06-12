@@ -15,6 +15,8 @@ fn valid_params_strategy() -> impl Strategy<Value = LoanParams> {
             same_spread: false,
             euribor_curve: vec![],
             prepayments: vec![],
+            upfront_cost: None,
+            upfront_percent: None,
         },
     )
 }
