@@ -8,8 +8,6 @@ x-common: &common
   working_dir: /workspace
   environment:
     - HOME=/home/developer
-    - CONTAINER_UID=${UID}
-    - CONTAINER_GID=${GID}
     - OPENCODE_DISABLE_AUTO_UPDATES=true
     - OPENCODE_SNAPSHOT_PATH=/home/developer/.local/share/opencode/snapshot-container
     - OPENCODE_MAX_THREADS=4

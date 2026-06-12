@@ -17,12 +17,7 @@ RUN dnf install -y --allowerasing \
 
 RUN dnf install -y epel-release && dnf install -y ripgrep && dnf clean all
 
-# Install gosu for dropping privileges at runtime
-RUN curl -o /usr/local/bin/gosu -fsSL "https://github.com/tianon/gosu/releases/download/1.17/gosu-amd64" \
-    && chmod +x /usr/local/bin/gosu \
-    && gosu nobody true
-
-# Install Rust system-wide so the non-root container user can use it
+# Install Rust system-wide so the container user can use it
 ENV CARGO_HOME=/usr/local/cargo \
     RUSTUP_HOME=/usr/local/rustup \
     PATH="/usr/local/cargo/bin:${PATH}"
@@ -35,6 +30,10 @@ RUN curl -fsSL https://opencode.ai/install | bash \
     && mv /root/.opencode/bin/opencode /usr/local/bin/opencode \
     && chmod +x /usr/local/bin/opencode \
     && rm -rf /root/.opencode
+
+# Create home directory for container user
+RUN mkdir -p /home/developer
+ENV HOME=/home/developer
 
 COPY docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
