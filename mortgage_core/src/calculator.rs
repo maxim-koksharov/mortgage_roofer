@@ -1,3 +1,4 @@
+use crate::error::MortgageError;
 use crate::models::*;
 use chrono::{Months, NaiveDate};
 
@@ -5,7 +6,12 @@ use chrono::{Months, NaiveDate};
 pub struct Calculator;
 
 impl Calculator {
-    pub fn calculate(params: &LoanParams) -> LoanResult {
+    pub fn calculate(params: &LoanParams) -> Result<LoanResult, MortgageError> {
+        let errors = params.validate();
+        if !errors.is_empty() {
+            return Err(MortgageError::CalculationError(errors.join("; ")));
+        }
+
         let mut payments = Vec::new();
         let mut balance = params.amount;
         let mut current_date = params.start_date;
@@ -14,11 +20,9 @@ impl Calculator {
 
         let total_months = params.term_years * 12;
 
-        // Sort prepayments by date.
         let mut prepayments = params.prepayments.clone();
         prepayments.sort_by_key(|p| p.date);
 
-        // Determine the effective annual rate for a given date.
         let effective_rate = |date: NaiveDate| -> f64 {
             Self::annual_rate_for_date(date, params)
         };
@@ -28,7 +32,6 @@ impl Calculator {
             let mut target_monthly_payment: Option<f64> = None;
 
             while balance > 0.01 && remaining_months > 0 {
-                // Apply any prepayments scheduled for this payment date BEFORE calculating.
                 while let Some(prep) = prepayments.first() {
                     if prep.date == current_date {
                         let prep = prepayments.remove(0);
@@ -37,11 +40,8 @@ impl Calculator {
                         total_principal += prep_amount;
 
                         match prep.effect {
-                            PrepaymentEffect::ReduceTerm => {
-                                // Keep the same target monthly payment; term shortens naturally.
-                            }
+                            PrepaymentEffect::ReduceTerm => {}
                             PrepaymentEffect::ReducePayment => {
-                                // Recalculate the target monthly payment for the reduced balance.
                                 target_monthly_payment = None;
                             }
                         }
@@ -53,7 +53,6 @@ impl Calculator {
                 let rate = effective_rate(current_date);
                 let monthly_rate = rate / 12.0 / 100.0;
 
-                // Calculate or preserve the monthly payment amount.
                 let monthly_payment = match target_monthly_payment {
                     Some(mp) => mp,
                     None => {
@@ -89,7 +88,7 @@ impl Calculator {
 
                 current_date = current_date
                     .checked_add_months(Months::new(1))
-                    .expect("Invalid date");
+                    .ok_or_else(|| MortgageError::InvalidDate("Date overflow".to_string()))?;
                 remaining_months -= 1;
             }
 
@@ -100,7 +99,6 @@ impl Calculator {
             let fixed_monthly = if payments.is_empty() {
                 None
             } else {
-                // Report the initial monthly payment (before any prepayments).
                 let initial_rate = effective_rate(params.start_date);
                 let mr = initial_rate / 12.0 / 100.0;
                 if mr > 0.0 {
@@ -113,21 +111,19 @@ impl Calculator {
                 }
             };
 
-            LoanResult {
+            Ok(LoanResult {
                 monthly_payment: fixed_monthly,
                 total_principal,
                 total_interest,
                 total_paid: total_principal + total_interest,
                 payments,
                 principal_exceeds_interest_at: first_principal_gt_interest,
-            }
+            })
         } else {
-            // Diff (declining balance)
             let mut remaining_months = total_months;
             let mut target_principal: Option<f64> = None;
 
             while balance > 0.01 && remaining_months > 0 {
-                // Apply prepayments scheduled for this date.
                 while let Some(prep) = prepayments.first() {
                     if prep.date == current_date {
                         let prep = prepayments.remove(0);
@@ -137,13 +133,11 @@ impl Calculator {
 
                         match prep.effect {
                             PrepaymentEffect::ReduceTerm => {
-                                // Keep the same target principal; recalc remaining months.
                                 if let Some(tp) = target_principal {
                                     remaining_months = ((balance / tp).ceil() as u32).max(1);
                                 }
                             }
                             PrepaymentEffect::ReducePayment => {
-                                // Recalculate principal for remaining term.
                                 target_principal = None;
                             }
                         }
@@ -181,7 +175,7 @@ impl Calculator {
 
                 current_date = current_date
                     .checked_add_months(Months::new(1))
-                    .expect("Invalid date");
+                    .ok_or_else(|| MortgageError::InvalidDate("Date overflow".to_string()))?;
                 remaining_months -= 1;
             }
 
@@ -189,14 +183,14 @@ impl Calculator {
                 .iter()
                 .position(|p| p.principal > p.interest);
 
-            LoanResult {
+            Ok(LoanResult {
                 monthly_payment: None,
                 total_principal,
                 total_interest,
                 total_paid: total_principal + total_interest,
                 payments,
                 principal_exceeds_interest_at: first_principal_gt_interest,
-            }
+            })
         }
     }
 
@@ -278,11 +272,9 @@ mod tests {
     #[test]
     fn test_annuity_basic() {
         let params = default_params();
-        let result = Calculator::calculate(&params);
+        let result = Calculator::calculate(&params).unwrap();
         assert!(result.monthly_payment.is_some());
-        // Total principal should equal the loan amount (within rounding).
         assert!((result.total_principal - params.amount).abs() < 1.0);
-        // Total interest should be positive.
         assert!(result.total_interest > 0.0);
         assert_eq!(result.payments.len(), 120);
     }
@@ -291,7 +283,7 @@ mod tests {
     fn test_diff_basic() {
         let mut params = default_params();
         params.payment_type = PaymentType::Diff;
-        let result = Calculator::calculate(&params);
+        let result = Calculator::calculate(&params).unwrap();
         assert!(result.monthly_payment.is_none());
         assert!((result.total_principal - params.amount).abs() < 1.0);
         assert!(result.total_interest > 0.0);
@@ -306,8 +298,7 @@ mod tests {
             amount: 20_000.0,
             effect: PrepaymentEffect::ReduceTerm,
         });
-        let result = Calculator::calculate(&params);
-        // Should finish before the original 120 months.
+        let result = Calculator::calculate(&params).unwrap();
         assert!(result.payments.len() < 120, "Expected <120 payments, got {}", result.payments.len());
         assert!((result.total_principal - params.amount).abs() < 1.0);
     }
@@ -320,8 +311,7 @@ mod tests {
             amount: 20_000.0,
             effect: PrepaymentEffect::ReducePayment,
         });
-        let result = Calculator::calculate(&params);
-        // Should still be ~120 months (may vary by a couple due to rounding).
+        let result = Calculator::calculate(&params).unwrap();
         let len = result.payments.len();
         assert!(len >= 118 && len <= 122, "Expected ~120 payments, got {}", len);
         assert!((result.total_principal - params.amount).abs() < 1.0);
@@ -343,16 +333,14 @@ mod tests {
                 rate: 4.0,
             },
         ];
-        let result = Calculator::calculate(&params);
-        // First 12 months at 4%, then at 4+2=6%
-        assert_eq!(result.payments[0].applied_rate, 4.0); // 3+1
-        // Find a payment in 2026
+        let result = Calculator::calculate(&params).unwrap();
+        assert_eq!(result.payments[0].applied_rate, 4.0);
         let p2026 = result
             .payments
             .iter()
             .find(|p| p.date.year() == 2026)
             .expect("Should have 2026 payments");
-        assert_eq!(p2026.applied_rate, 6.0); // 4+2
+        assert_eq!(p2026.applied_rate, 6.0);
     }
 
     #[test]
@@ -372,13 +360,13 @@ mod tests {
                 rate: 4.0,
             },
         ];
-        let result = Calculator::calculate(&params);
+        let result = Calculator::calculate(&params).unwrap();
         let p2026 = result
             .payments
             .iter()
             .find(|p| p.date.year() == 2026)
             .expect("Should have 2026 payments");
-        assert_eq!(p2026.applied_rate, 5.5); // 4 + 1.5 (same spread)
+        assert_eq!(p2026.applied_rate, 5.5);
     }
 
     #[test]
@@ -388,7 +376,7 @@ mod tests {
             rate: 0.0,
             spread: 0.0,
         };
-        let result = Calculator::calculate(&params);
+        let result = Calculator::calculate(&params).unwrap();
         assert_eq!(result.total_interest, 0.0);
         assert!((result.total_principal - params.amount).abs() < 0.01);
         let mp = result.monthly_payment.unwrap();
@@ -402,7 +390,34 @@ mod tests {
             rate: 5.0,
             spread: 0.0,
         };
-        let result = Calculator::calculate(&params);
+        let result = Calculator::calculate(&params).unwrap();
         assert!(result.principal_exceeds_interest_at.is_some());
+    }
+
+    #[test]
+    fn test_validation_invalid_amount() {
+        let mut params = default_params();
+        params.amount = -100.0;
+        let result = Calculator::calculate(&params);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validation_zero_term() {
+        let mut params = default_params();
+        params.term_years = 0;
+        let result = Calculator::calculate(&params);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validation_negative_rate() {
+        let mut params = default_params();
+        params.rate_mode = RateMode::Fix {
+            rate: -5.0,
+            spread: 0.0,
+        };
+        let result = Calculator::calculate(&params);
+        assert!(result.is_err());
     }
 }

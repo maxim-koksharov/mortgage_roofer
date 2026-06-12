@@ -1,5 +1,7 @@
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
+use std::fmt;
+use std::str::FromStr;
 
 /// Currency for formatting only; does not affect calculation logic.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -13,6 +15,26 @@ impl Currency {
         match self {
             Currency::Usd => "$",
             Currency::Eur => "€",
+        }
+    }
+}
+
+impl fmt::Display for Currency {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Currency::Usd => write!(f, "USD"),
+            Currency::Eur => write!(f, "EUR"),
+        }
+    }
+}
+
+impl FromStr for Currency {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_uppercase().as_str() {
+            "USD" => Ok(Currency::Usd),
+            "EUR" => Ok(Currency::Eur),
+            _ => Err(format!("Unknown currency: {}", s)),
         }
     }
 }
@@ -47,6 +69,25 @@ impl EuriborTenor {
     }
 }
 
+impl fmt::Display for EuriborTenor {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+impl FromStr for EuriborTenor {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "1m" => Ok(EuriborTenor::OneMonth),
+            "3m" => Ok(EuriborTenor::ThreeMonths),
+            "6m" => Ok(EuriborTenor::SixMonths),
+            "12m" => Ok(EuriborTenor::TwelveMonths),
+            _ => Err(format!("Unknown tenor: {}", s)),
+        }
+    }
+}
+
 /// Payment schedule type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PaymentType {
@@ -54,6 +95,26 @@ pub enum PaymentType {
     Annuity,
     #[serde(rename = "diff")]
     Diff,
+}
+
+impl fmt::Display for PaymentType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PaymentType::Annuity => write!(f, "Annuity"),
+            PaymentType::Diff => write!(f, "Diff"),
+        }
+    }
+}
+
+impl FromStr for PaymentType {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "annuity" | "annuitet" => Ok(PaymentType::Annuity),
+            "diff" => Ok(PaymentType::Diff),
+            _ => Err(format!("Unknown payment type: {}", s)),
+        }
+    }
 }
 
 /// How the interest rate is determined over the loan life.
@@ -88,6 +149,26 @@ pub enum PrepaymentEffect {
     ReducePayment,
 }
 
+impl fmt::Display for PrepaymentEffect {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PrepaymentEffect::ReduceTerm => write!(f, "ReduceTerm"),
+            PrepaymentEffect::ReducePayment => write!(f, "ReducePayment"),
+        }
+    }
+}
+
+impl FromStr for PrepaymentEffect {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "ReduceTerm" => Ok(PrepaymentEffect::ReduceTerm),
+            "ReducePayment" => Ok(PrepaymentEffect::ReducePayment),
+            _ => Err(format!("Unknown prepayment effect: {}", s)),
+        }
+    }
+}
+
 /// A single prepayment event.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Prepayment {
@@ -118,6 +199,80 @@ pub struct LoanParams {
     pub euribor_curve: Vec<EuriborPoint>,
     /// Optional prepayments.
     pub prepayments: Vec<Prepayment>,
+}
+
+impl LoanParams {
+    pub fn validate(&self) -> Vec<String> {
+        let mut errors = Vec::new();
+
+        if self.amount <= 0.0 {
+            errors.push("Loan amount must be positive".to_string());
+        }
+        if self.amount > 100_000_000.0 {
+            errors.push("Loan amount exceeds maximum (100,000,000)".to_string());
+        }
+        if self.term_years == 0 {
+            errors.push("Loan term must be at least 1 year".to_string());
+        }
+        if self.term_years > 50 {
+            errors.push("Loan term exceeds maximum (50 years)".to_string());
+        }
+
+        match &self.rate_mode {
+            RateMode::Fix { rate, spread } => {
+                if *rate < 0.0 {
+                    errors.push("Interest rate cannot be negative".to_string());
+                }
+                if *rate > 100.0 {
+                    errors.push("Interest rate exceeds 100%".to_string());
+                }
+                if *spread < 0.0 {
+                    errors.push("Spread cannot be negative".to_string());
+                }
+            }
+            RateMode::Euribor { spread, .. } => {
+                if *spread < 0.0 {
+                    errors.push("Spread cannot be negative".to_string());
+                }
+            }
+            RateMode::Mixed {
+                fix_years,
+                fix_rate,
+                fix_spread,
+                euribor_spread,
+                ..
+            } => {
+                if *fix_years <= 0.0 {
+                    errors.push("Fixed period must be positive".to_string());
+                }
+                if *fix_rate < 0.0 {
+                    errors.push("Fixed rate cannot be negative".to_string());
+                }
+                if *fix_spread < 0.0 {
+                    errors.push("Fixed spread cannot be negative".to_string());
+                }
+                if !self.same_spread && *euribor_spread < 0.0 {
+                    errors.push("Euribor spread cannot be negative".to_string());
+                }
+            }
+        }
+
+        for (i, prep) in self.prepayments.iter().enumerate() {
+            if prep.amount <= 0.0 {
+                errors.push(format!("Prepayment #{} amount must be positive", i + 1));
+            }
+            if prep.date < self.start_date {
+                errors.push(format!(
+                    "Prepayment #{} date ({}) is before loan start date ({})",
+                    i + 1,
+                    prep.date,
+                    self.start_date
+                ));
+            }
+        }
+
+        errors
+    }
 }
 
 /// A single monthly payment record.

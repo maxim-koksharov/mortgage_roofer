@@ -1,6 +1,6 @@
 use clap::{Parser, ValueEnum};
 use mortgage_core::models::*;
-use mortgage_core::Calculator;
+use mortgage_core::{Calculator, payments_to_csv};
 use std::fs;
 use std::path::PathBuf;
 
@@ -116,7 +116,13 @@ fn main() {
         build_params_from_args(&args)
     };
 
-    let result = Calculator::calculate(&params);
+    let result = match Calculator::calculate(&params) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("Calculation error: {}", e);
+            std::process::exit(1);
+        }
+    };
 
     if let Some(output_path) = args.output {
         let csv = payments_to_csv(&result.payments);
@@ -233,17 +239,4 @@ fn print_table(payments: &[Payment], limit: usize) {
     if payments.len() > limit {
         println!("... ({} more payments)", payments.len() - limit);
     }
-}
-
-fn payments_to_csv(payments: &[Payment]) -> String {
-    let mut lines = vec![
-        "date,payment,principal,interest,remaining_balance,applied_rate".to_string(),
-    ];
-    for p in payments {
-        lines.push(format!(
-            "{},{:.2},{:.2},{:.2},{:.2},{:.4}",
-            p.date, p.payment, p.principal, p.interest, p.remaining_balance, p.applied_rate
-        ));
-    }
-    lines.join("\n") + "\n"
 }
