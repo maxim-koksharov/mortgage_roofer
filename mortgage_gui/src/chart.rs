@@ -138,3 +138,93 @@ pub fn generate_stacked_bar_chart_png(result: &LoanResult) -> Vec<u8> {
     }
     png_buf
 }
+
+pub fn generate_balance_line_chart_svg(result: &LoanResult) -> String {
+    let mut svg_data = String::new();
+    {
+        let root = SVGBackend::with_string(&mut svg_data, (900, 500)).into_drawing_area();
+        root.fill(&WHITE).unwrap();
+
+        let n = result.payments.len();
+        let max_y = result.payments
+            .iter()
+            .map(|p| p.remaining_balance)
+            .fold(0.0, f64::max)
+            * 1.1;
+
+        let mut chart = ChartBuilder::on(&root)
+            .caption("Remaining Balance Over Time", ("sans-serif", 28))
+            .margin(10)
+            .x_label_area_size(30)
+            .y_label_area_size(60)
+            .build_cartesian_2d(0.0..n as f64, 0.0..max_y)
+            .unwrap();
+
+        chart.configure_mesh().draw().unwrap();
+
+        let points: Vec<(f64, f64)> = result.payments.iter()
+            .enumerate()
+            .map(|(i, p)| (i as f64, p.remaining_balance))
+            .collect();
+
+        chart.draw_series(LineSeries::new(points, &BLUE)).unwrap();
+
+        chart
+            .configure_series_labels()
+            .border_style(&BLACK)
+            .draw()
+            .unwrap();
+    }
+    svg_data
+}
+
+pub fn generate_balance_line_chart_png(result: &LoanResult) -> Vec<u8> {
+    use image::ImageEncoder;
+
+    let width = 900u32;
+    let height = 500u32;
+    let mut raw = vec![0u8; (width * height * 3) as usize];
+    {
+        let root = BitMapBackend::with_buffer(&mut raw, (width, height)).into_drawing_area();
+        root.fill(&WHITE).unwrap();
+
+        let n = result.payments.len();
+        let max_y = result.payments
+            .iter()
+            .map(|p| p.remaining_balance)
+            .fold(0.0, f64::max)
+            * 1.1;
+
+        let mut chart = ChartBuilder::on(&root)
+            .caption("Remaining Balance Over Time", ("sans-serif", 28))
+            .margin(10)
+            .x_label_area_size(30)
+            .y_label_area_size(60)
+            .build_cartesian_2d(0.0..n as f64, 0.0..max_y)
+            .unwrap();
+
+        chart.configure_mesh().draw().unwrap();
+
+        let points: Vec<(f64, f64)> = result.payments.iter()
+            .enumerate()
+            .map(|(i, p)| (i as f64, p.remaining_balance))
+            .collect();
+
+        chart.draw_series(LineSeries::new(points, &BLUE)).unwrap();
+
+        chart
+            .configure_series_labels()
+            .border_style(&BLACK)
+            .draw()
+            .unwrap();
+    }
+
+    let mut png_buf = Vec::new();
+    {
+        let mut cursor = std::io::Cursor::new(&mut png_buf);
+        image::codecs::png::PngEncoder::new(&mut cursor)
+            .write_image(&raw, width, height, image::ColorType::Rgb8)
+            .unwrap();
+    }
+    png_buf
+}

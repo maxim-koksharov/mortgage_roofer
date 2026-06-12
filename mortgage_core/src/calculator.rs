@@ -3,9 +3,35 @@ use crate::models::*;
 use chrono::{Months, NaiveDate};
 
 /// Calculates a loan schedule from parameters.
+///
+/// # Examples
+///
+/// ```
+/// use mortgage_core::{Calculator, LoanParams, PaymentType, Currency, RateMode};
+/// use chrono::NaiveDate;
+///
+/// let params = LoanParams {
+///     amount: 100_000.0,
+///     term_years: 10,
+///     payment_type: PaymentType::Annuity,
+///     currency: Currency::Eur,
+///     start_date: NaiveDate::from_ymd_opt(2025, 1, 1).unwrap(),
+///     rate_mode: RateMode::Fix { rate: 5.0, spread: 0.0 },
+///     same_spread: false,
+///     euribor_curve: vec![],
+///     prepayments: vec![],
+/// };
+///
+/// let result = Calculator::calculate(&params).unwrap();
+/// assert!(result.monthly_payment.is_some());
+/// assert_eq!(result.payments.len(), 120);
+/// ```
 pub struct Calculator;
 
 impl Calculator {
+    /// Calculates a loan schedule from the given parameters.
+    ///
+    /// Returns `Err` if validation fails (e.g., negative amount, zero term).
     pub fn calculate(params: &LoanParams) -> Result<LoanResult, MortgageError> {
         let errors = params.validate();
         if !errors.is_empty() {

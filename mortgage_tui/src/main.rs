@@ -1,7 +1,7 @@
 mod app;
 mod ui;
 
-use app::{App, Screen};
+use app::{App, Field, Screen};
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::DefaultTerminal;
 
@@ -52,11 +52,21 @@ impl App {
             KeyCode::Left => self.cycle_enum(-1),
             KeyCode::Right => self.cycle_enum(1),
             KeyCode::Enter => {
-                if let Err(e) = self.calculate() {
+                if self.fields[self.selected] == Field::AddPrepayment {
+                    if let Err(e) = self.add_prepayment() {
+                        self.popup_msg = Some(format!("Error: {}", e));
+                        self.screen = Screen::Popup(self.popup_msg.clone().unwrap());
+                    }
+                } else if let Err(e) = self.calculate() {
                     self.popup_msg = Some(format!("Error: {}", e));
                     self.screen = Screen::Popup(self.popup_msg.clone().unwrap());
                 } else {
                     self.screen = Screen::Results;
+                }
+            }
+            KeyCode::Delete => {
+                if !self.prepayments.is_empty() {
+                    self.prepayments.pop();
                 }
             }
             KeyCode::Esc => {

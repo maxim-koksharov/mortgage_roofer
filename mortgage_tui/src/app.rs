@@ -29,6 +29,7 @@ pub enum Field {
     PrepaymentDate,
     PrepaymentAmount,
     PrepaymentEffect,
+    AddPrepayment,
 }
 
 pub struct App {
@@ -54,6 +55,7 @@ pub struct App {
     pub prepayment_date: String,
     pub prepayment_amount: String,
     pub prepayment_effect: usize,
+    pub prepayments: Vec<Prepayment>,
 
     pub result: Option<LoanResult>,
     pub params: Option<LoanParams>,
@@ -85,6 +87,7 @@ impl App {
             prepayment_date: "2027-01-01".to_string(),
             prepayment_amount: "20000".to_string(),
             prepayment_effect: 0,
+            prepayments: vec![],
             result: None,
             params: None,
             scroll_offset: 0,
@@ -124,6 +127,7 @@ impl App {
         f.push(Field::PrepaymentDate);
         f.push(Field::PrepaymentAmount);
         f.push(Field::PrepaymentEffect);
+        f.push(Field::AddPrepayment);
         self.fields = f;
         if self.selected >= self.fields.len() {
             self.selected = self.fields.len().saturating_sub(1);
@@ -226,19 +230,6 @@ impl App {
             _ => return Err("Unknown rate mode".to_string()),
         };
 
-        let mut prepayments = vec![];
-        let prep_date = NaiveDate::parse_from_str(&self.prepayment_date, "%Y-%m-%d")
-            .map_err(|_| "Invalid prepayment date (YYYY-MM-DD)")?;
-        let prep_amount = self.prepayment_amount.parse::<f64>().map_err(|_| "Invalid prepayment amount")?;
-        let prep_effect = if self.prepayment_effect == 0 { PrepaymentEffect::ReduceTerm } else { PrepaymentEffect::ReducePayment };
-        if prep_amount > 0.0 {
-            prepayments.push(Prepayment {
-                date: prep_date,
-                amount: prep_amount,
-                effect: prep_effect,
-            });
-        }
-
         let params = LoanParams {
             amount,
             term_years,
@@ -248,7 +239,7 @@ impl App {
             rate_mode,
             same_spread: self.same_spread,
             euribor_curve: vec![],
-            prepayments,
+            prepayments: self.prepayments.clone(),
         };
 
         let result = Calculator::calculate(&params).map_err(|e| e.to_string())?;
@@ -256,6 +247,30 @@ impl App {
         self.result = Some(result);
         self.scroll_offset = 0;
         Ok(())
+    }
+
+    pub fn add_prepayment(&mut self) -> Result<(), String> {
+        let date = NaiveDate::parse_from_str(&self.prepayment_date, "%Y-%m-%d")
+            .map_err(|_| "Invalid prepayment date (YYYY-MM-DD)")?;
+        let amount = self.prepayment_amount.parse::<f64>()
+            .map_err(|_| "Invalid prepayment amount")?;
+        if amount <= 0.0 {
+            return Err("Prepayment amount must be positive".to_string());
+        }
+        let effect = if self.prepayment_effect == 0 {
+            PrepaymentEffect::ReduceTerm
+        } else {
+            PrepaymentEffect::ReducePayment
+        };
+        self.prepayments.push(Prepayment { date, amount, effect });
+        self.prepayment_amount = "0".to_string();
+        Ok(())
+    }
+
+    pub fn remove_prepayment(&mut self, idx: usize) {
+        if idx < self.prepayments.len() {
+            self.prepayments.remove(idx);
+        }
     }
 }
 

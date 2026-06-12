@@ -63,6 +63,10 @@ impl App {
                 Field::PrepaymentDate => ("Prepayment date", self.prepayment_date.clone()),
                 Field::PrepaymentAmount => ("Prepayment amount", self.prepayment_amount.clone()),
                 Field::PrepaymentEffect => ("Prepayment effect", if self.prepayment_effect == 0 { "ReduceTerm".to_string() } else { "ReducePayment".to_string() }),
+                Field::AddPrepayment => {
+                    let count = self.prepayments.len();
+                    ("Add prepayment", format!("[Enter to add, {} saved]", count))
+                }
             };
 
             let hint = if is_sel {
@@ -71,6 +75,7 @@ impl App {
                     | Field::MixedEuriborTenor | Field::SameSpread | Field::PrepaymentEffect => {
                         " [←→ toggle]"
                     }
+                    Field::AddPrepayment => " [Enter=add, Del=remove last]",
                     _ => " [type]",
                 }
             } else {
