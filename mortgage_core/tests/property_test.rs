@@ -1,16 +1,11 @@
 use chrono::NaiveDate;
-use mortgage_core::models::*;
 use mortgage_core::Calculator;
+use mortgage_core::models::*;
 use proptest::prelude::*;
 
 fn valid_params_strategy() -> impl Strategy<Value = LoanParams> {
-    (
-        1000.0f64..1_000_000.0,
-        1u32..30,
-        0.0f64..20.0,
-        0.0f64..5.0,
-    ).prop_map(|(amount, term_years, rate, spread)| {
-        LoanParams {
+    (1000.0f64..1_000_000.0, 1u32..30, 0.0f64..20.0, 0.0f64..5.0).prop_map(
+        |(amount, term_years, rate, spread)| LoanParams {
             amount,
             term_years,
             payment_type: PaymentType::Annuity,
@@ -20,8 +15,8 @@ fn valid_params_strategy() -> impl Strategy<Value = LoanParams> {
             same_spread: false,
             euribor_curve: vec![],
             prepayments: vec![],
-        }
-    })
+        },
+    )
 }
 
 proptest! {

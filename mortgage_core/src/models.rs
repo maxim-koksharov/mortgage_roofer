@@ -40,22 +40,17 @@ impl FromStr for Currency {
 }
 
 /// Euribor tenor (maturity period).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum EuriborTenor {
     #[serde(rename = "1m")]
     OneMonth,
     #[serde(rename = "3m")]
     ThreeMonths,
     #[serde(rename = "6m")]
+    #[default]
     SixMonths,
     #[serde(rename = "12m")]
     TwelveMonths,
-}
-
-impl Default for EuriborTenor {
-    fn default() -> Self {
-        EuriborTenor::SixMonths
-    }
 }
 
 impl EuriborTenor {
@@ -121,15 +116,9 @@ impl FromStr for PaymentType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum RateMode {
     /// Fixed rate for the entire term.
-    Fix {
-        rate: f64,
-        spread: f64,
-    },
+    Fix { rate: f64, spread: f64 },
     /// Euribor-linked rate for the entire term.
-    Euribor {
-        tenor: EuriborTenor,
-        spread: f64,
-    },
+    Euribor { tenor: EuriborTenor, spread: f64 },
     /// Fixed for an initial period, then switches to Euribor+spread.
     Mixed {
         fix_years: f64,
@@ -318,15 +307,15 @@ impl LoanResult {
 
         for p in &self.payments {
             let year = p.date.year();
-            if let Some(last) = summaries.last_mut() {
-                if last.year == year {
-                    last.total_payment += p.payment;
-                    last.total_principal += p.principal;
-                    last.total_interest += p.interest;
-                    last.payments_count += 1;
-                    last.ending_balance = p.remaining_balance;
-                    continue;
-                }
+            if let Some(last) = summaries.last_mut()
+                && last.year == year
+            {
+                last.total_payment += p.payment;
+                last.total_principal += p.principal;
+                last.total_interest += p.interest;
+                last.payments_count += 1;
+                last.ending_balance = p.remaining_balance;
+                continue;
             }
             summaries.push(YearlySummary {
                 year,

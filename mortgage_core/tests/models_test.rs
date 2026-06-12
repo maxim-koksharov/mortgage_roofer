@@ -16,19 +16,15 @@ fn sample_params() -> LoanParams {
             euribor_spread: 1.5,
         },
         same_spread: false,
-        euribor_curve: vec![
-            EuriborPoint {
-                date_from: NaiveDate::from_ymd_opt(2027, 1, 1).unwrap(),
-                rate: 3.0,
-            },
-        ],
-        prepayments: vec![
-            Prepayment {
-                date: NaiveDate::from_ymd_opt(2028, 1, 1).unwrap(),
-                amount: 50_000.0,
-                effect: PrepaymentEffect::ReduceTerm,
-            },
-        ],
+        euribor_curve: vec![EuriborPoint {
+            date_from: NaiveDate::from_ymd_opt(2027, 1, 1).unwrap(),
+            rate: 3.0,
+        }],
+        prepayments: vec![Prepayment {
+            date: NaiveDate::from_ymd_opt(2028, 1, 1).unwrap(),
+            amount: 50_000.0,
+            effect: PrepaymentEffect::ReduceTerm,
+        }],
     }
 }
 
@@ -69,7 +65,10 @@ fn test_euribor_tenor_serde_roundtrip() {
 
 #[test]
 fn test_prepayment_effect_serde_roundtrip() {
-    let effects = vec![PrepaymentEffect::ReduceTerm, PrepaymentEffect::ReducePayment];
+    let effects = vec![
+        PrepaymentEffect::ReduceTerm,
+        PrepaymentEffect::ReducePayment,
+    ];
     for e in effects {
         let json = serde_json::to_string(&e).unwrap();
         let deserialized: PrepaymentEffect = serde_json::from_str(&json).unwrap();
@@ -79,7 +78,10 @@ fn test_prepayment_effect_serde_roundtrip() {
 
 #[test]
 fn test_rate_mode_fix_serde_roundtrip() {
-    let mode = RateMode::Fix { rate: 5.0, spread: 1.0 };
+    let mode = RateMode::Fix {
+        rate: 5.0,
+        spread: 1.0,
+    };
     let json = serde_json::to_string(&mode).unwrap();
     let deserialized: RateMode = serde_json::from_str(&json).unwrap();
     match deserialized {
@@ -189,7 +191,10 @@ fn test_loan_result_serde_roundtrip() {
         payment_type: PaymentType::Annuity,
         currency: Currency::Usd,
         start_date: NaiveDate::from_ymd_opt(2025, 1, 1).unwrap(),
-        rate_mode: RateMode::Fix { rate: 5.0, spread: 0.0 },
+        rate_mode: RateMode::Fix {
+            rate: 5.0,
+            spread: 0.0,
+        },
         same_spread: false,
         euribor_curve: vec![],
         prepayments: vec![],
@@ -201,7 +206,10 @@ fn test_loan_result_serde_roundtrip() {
 
     assert_eq!(deserialized.payments.len(), result.payments.len());
     assert!((deserialized.total_paid - result.total_paid).abs() < 0.01);
-    assert_eq!(deserialized.principal_exceeds_interest_at, result.principal_exceeds_interest_at);
+    assert_eq!(
+        deserialized.principal_exceeds_interest_at,
+        result.principal_exceeds_interest_at
+    );
 }
 
 #[test]
@@ -240,24 +248,48 @@ fn test_from_str_currency() {
 
 #[test]
 fn test_from_str_payment_type() {
-    assert_eq!("annuity".parse::<PaymentType>().unwrap(), PaymentType::Annuity);
-    assert_eq!("annuitet".parse::<PaymentType>().unwrap(), PaymentType::Annuity);
+    assert_eq!(
+        "annuity".parse::<PaymentType>().unwrap(),
+        PaymentType::Annuity
+    );
+    assert_eq!(
+        "annuitet".parse::<PaymentType>().unwrap(),
+        PaymentType::Annuity
+    );
     assert_eq!("diff".parse::<PaymentType>().unwrap(), PaymentType::Diff);
     assert!("unknown".parse::<PaymentType>().is_err());
 }
 
 #[test]
 fn test_from_str_euribor_tenor() {
-    assert_eq!("1m".parse::<EuriborTenor>().unwrap(), EuriborTenor::OneMonth);
-    assert_eq!("3m".parse::<EuriborTenor>().unwrap(), EuriborTenor::ThreeMonths);
-    assert_eq!("6m".parse::<EuriborTenor>().unwrap(), EuriborTenor::SixMonths);
-    assert_eq!("12m".parse::<EuriborTenor>().unwrap(), EuriborTenor::TwelveMonths);
+    assert_eq!(
+        "1m".parse::<EuriborTenor>().unwrap(),
+        EuriborTenor::OneMonth
+    );
+    assert_eq!(
+        "3m".parse::<EuriborTenor>().unwrap(),
+        EuriborTenor::ThreeMonths
+    );
+    assert_eq!(
+        "6m".parse::<EuriborTenor>().unwrap(),
+        EuriborTenor::SixMonths
+    );
+    assert_eq!(
+        "12m".parse::<EuriborTenor>().unwrap(),
+        EuriborTenor::TwelveMonths
+    );
     assert!("24m".parse::<EuriborTenor>().is_err());
 }
 
 #[test]
 fn test_from_str_prepayment_effect() {
-    assert_eq!("ReduceTerm".parse::<PrepaymentEffect>().unwrap(), PrepaymentEffect::ReduceTerm);
-    assert_eq!("ReducePayment".parse::<PrepaymentEffect>().unwrap(), PrepaymentEffect::ReducePayment);
+    assert_eq!(
+        "ReduceTerm".parse::<PrepaymentEffect>().unwrap(),
+        PrepaymentEffect::ReduceTerm
+    );
+    assert_eq!(
+        "ReducePayment".parse::<PrepaymentEffect>().unwrap(),
+        PrepaymentEffect::ReducePayment
+    );
     assert!("Unknown".parse::<PrepaymentEffect>().is_err());
 }

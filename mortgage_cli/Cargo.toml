@@ -7,5 +7,4 @@ edition = "2024"
 mortgage_core = { path = "../mortgage_core" }
 clap = { workspace = true }
 serde_json = { workspace = true }
-csv = { workspace = true }
 chrono = { workspace = true }

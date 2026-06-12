@@ -10,22 +10,20 @@ impl App {
         loop {
             terminal.draw(|frame| self.draw(frame))?;
 
-            if let Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press {
-                    match self.screen {
-                        Screen::Form => self.handle_form(key.code),
-                        Screen::Results => self.handle_results(key.code),
-                        Screen::Popup(_) => {
-                            self.popup_msg = None;
-                            self.screen = Screen::Form;
-                        }
+            if let Event::Key(key) = event::read()?
+                && key.kind == KeyEventKind::Press
+            {
+                match self.screen {
+                    Screen::Form => self.handle_form(key.code),
+                    Screen::Results => self.handle_results(key.code),
+                    Screen::Popup(_) => {
+                        self.popup_msg = None;
+                        self.screen = Screen::Form;
                     }
                 }
             }
 
-            if self.screen == Screen::Form && self.result.is_some() && self.popup_msg.is_none() {
-                // Continue loop
-            }
+            if self.screen == Screen::Form && self.result.is_some() && self.popup_msg.is_none() {}
         }
     }
 
@@ -69,16 +67,7 @@ impl App {
                     self.prepayments.pop();
                 }
             }
-            KeyCode::Esc => {
-                if self.result.is_some() {
-                    return;
-                }
-            }
-            KeyCode::Char('q') => {
-                if self.result.is_some() {
-                    return;
-                }
-            }
+            KeyCode::Esc | KeyCode::Char('q') if self.result.is_some() => {}
             _ => {}
         }
     }
@@ -86,10 +75,40 @@ impl App {
     fn handle_results(&mut self, code: KeyCode) {
         match code {
             KeyCode::Esc | KeyCode::Char('q') => {
-                self.screen = Screen::Form;
+                if self.show_analysis.is_some() {
+                    self.show_analysis = None;
+                } else {
+                    self.screen = Screen::Form;
+                }
             }
             KeyCode::Char('s') | KeyCode::Char('S') => {
                 self.export_csv("/tmp/mortgage_tui_export.csv");
+            }
+            KeyCode::Char('y') | KeyCode::Char('Y') => {
+                self.show_yearly = !self.show_yearly;
+                self.show_analysis = None;
+            }
+            KeyCode::Char('r') | KeyCode::Char('R') => {
+                if let Some(ref params) = self.params {
+                    let deltas = vec![-2.0, -1.0, -0.5, 0.0, 0.5, 1.0, 2.0];
+                    let points = mortgage_core::sensitivity_analysis(params, &deltas);
+                    self.show_analysis = Some(app::AnalysisView::Sensitivity(points));
+                    self.show_yearly = false;
+                }
+            }
+            KeyCode::Char('b') | KeyCode::Char('B') => {
+                if let Some(ref params) = self.params {
+                    let rent = params.amount * 0.005;
+                    let be = mortgage_core::break_even_analysis(params, rent);
+                    self.show_analysis = Some(app::AnalysisView::BreakEven(be));
+                    self.show_yearly = false;
+                }
+            }
+            KeyCode::Char('w') | KeyCode::Char('W') => {
+                self.save_session("/tmp/mortgage_session.json");
+            }
+            KeyCode::Char('l') | KeyCode::Char('L') => {
+                self.load_session("/tmp/mortgage_session.json");
             }
             KeyCode::Down | KeyCode::PageDown => {
                 if let Some(ref result) = self.result {
@@ -99,10 +118,8 @@ impl App {
                     }
                 }
             }
-            KeyCode::Up | KeyCode::PageUp => {
-                if self.scroll_offset > 0 {
-                    self.scroll_offset -= 1;
-                }
+            KeyCode::Up | KeyCode::PageUp if self.scroll_offset > 0 => {
+                self.scroll_offset -= 1;
             }
             _ => {}
         }

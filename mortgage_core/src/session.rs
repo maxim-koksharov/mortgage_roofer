@@ -34,7 +34,11 @@ pub struct Session {
 /// let result = Calculator::calculate(&params).unwrap();
 /// save_session("/tmp/session.json", &params, &result).unwrap();
 /// ```
-pub fn save_session<P: AsRef<Path>>(path: P, params: &LoanParams, result: &LoanResult) -> Result<(), MortgageError> {
+pub fn save_session<P: AsRef<Path>>(
+    path: P,
+    params: &LoanParams,
+    result: &LoanResult,
+) -> Result<(), MortgageError> {
     let session = Session {
         params: params.clone(),
         result: result.clone(),
