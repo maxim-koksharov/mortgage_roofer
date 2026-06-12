@@ -1,3 +1,4 @@
+pub mod analysis;
 pub mod calculator;
 pub mod error;
 pub mod euribor;
@@ -5,6 +6,7 @@ pub mod export;
 pub mod models;
 pub mod session;
 
+pub use analysis::{BreakEvenResult, SensitivityPoint, break_even_analysis, sensitivity_analysis};
 pub use calculator::Calculator;
 pub use error::MortgageError;
 pub use export::payments_to_csv;

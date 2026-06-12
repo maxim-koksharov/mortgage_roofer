@@ -87,7 +87,17 @@ fn test_cli_json_config() {
 #[test]
 fn test_cli_yearly_summary() {
     let output = Command::new(cargo_bin())
-        .args(&["-a", "100000", "-t", "5", "-r", "5", "--yearly", "--start-date", "2025-01-01"])
+        .args(&[
+            "-a",
+            "100000",
+            "-t",
+            "5",
+            "-r",
+            "5",
+            "--yearly",
+            "--start-date",
+            "2025-01-01",
+        ])
         .output()
         .expect("Failed to run CLI");
 
@@ -102,12 +112,20 @@ fn test_cli_yearly_summary() {
 fn test_cli_mixed_rate_mode() {
     let output = Command::new(cargo_bin())
         .args(&[
-            "-a", "100000", "-t", "10",
-            "--rate-mode", "mixed",
-            "--fix-years", "2",
-            "-r", "3",
-            "--spread", "1",
-            "--euribor-spread", "2",
+            "-a",
+            "100000",
+            "-t",
+            "10",
+            "--rate-mode",
+            "mixed",
+            "--fix-years",
+            "2",
+            "-r",
+            "3",
+            "--spread",
+            "1",
+            "--euribor-spread",
+            "2",
         ])
         .output()
         .expect("Failed to run CLI");

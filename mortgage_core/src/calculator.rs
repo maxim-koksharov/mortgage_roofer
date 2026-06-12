@@ -49,9 +49,7 @@ impl Calculator {
         let mut prepayments = params.prepayments.clone();
         prepayments.sort_by_key(|p| p.date);
 
-        let effective_rate = |date: NaiveDate| -> f64 {
-            Self::annual_rate_for_date(date, params)
-        };
+        let effective_rate = |date: NaiveDate| -> f64 { Self::annual_rate_for_date(date, params) };
 
         if params.payment_type == PaymentType::Annuity {
             let mut remaining_months = total_months;
@@ -83,8 +81,8 @@ impl Calculator {
                     Some(mp) => mp,
                     None => {
                         let mp = if monthly_rate > 0.0 {
-                            let num = monthly_rate
-                                * (1.0 + monthly_rate).powi(remaining_months as i32);
+                            let num =
+                                monthly_rate * (1.0 + monthly_rate).powi(remaining_months as i32);
                             let den = (1.0 + monthly_rate).powi(remaining_months as i32) - 1.0;
                             balance * num / den
                         } else {
@@ -118,9 +116,8 @@ impl Calculator {
                 remaining_months -= 1;
             }
 
-            let first_principal_gt_interest = payments
-                .iter()
-                .position(|p| p.principal > p.interest);
+            let first_principal_gt_interest =
+                payments.iter().position(|p| p.principal > p.interest);
 
             let fixed_monthly = if payments.is_empty() {
                 None
@@ -205,9 +202,8 @@ impl Calculator {
                 remaining_months -= 1;
             }
 
-            let first_principal_gt_interest = payments
-                .iter()
-                .position(|p| p.principal > p.interest);
+            let first_principal_gt_interest =
+                payments.iter().position(|p| p.principal > p.interest);
 
             Ok(LoanResult {
                 monthly_payment: None,
@@ -325,7 +321,11 @@ mod tests {
             effect: PrepaymentEffect::ReduceTerm,
         });
         let result = Calculator::calculate(&params).unwrap();
-        assert!(result.payments.len() < 120, "Expected <120 payments, got {}", result.payments.len());
+        assert!(
+            result.payments.len() < 120,
+            "Expected <120 payments, got {}",
+            result.payments.len()
+        );
         assert!((result.total_principal - params.amount).abs() < 1.0);
     }
 
@@ -339,7 +339,11 @@ mod tests {
         });
         let result = Calculator::calculate(&params).unwrap();
         let len = result.payments.len();
-        assert!(len >= 118 && len <= 122, "Expected ~120 payments, got {}", len);
+        assert!(
+            len >= 118 && len <= 122,
+            "Expected ~120 payments, got {}",
+            len
+        );
         assert!((result.total_principal - params.amount).abs() < 1.0);
     }
 
@@ -353,12 +357,10 @@ mod tests {
             euribor_tenor: EuriborTenor::SixMonths,
             euribor_spread: 2.0,
         };
-        params.euribor_curve = vec![
-            EuriborPoint {
-                date_from: NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
-                rate: 4.0,
-            },
-        ];
+        params.euribor_curve = vec![EuriborPoint {
+            date_from: NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+            rate: 4.0,
+        }];
         let result = Calculator::calculate(&params).unwrap();
         assert_eq!(result.payments[0].applied_rate, 4.0);
         let p2026 = result
@@ -380,12 +382,10 @@ mod tests {
             euribor_spread: 2.0,
         };
         params.same_spread = true;
-        params.euribor_curve = vec![
-            EuriborPoint {
-                date_from: NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
-                rate: 4.0,
-            },
-        ];
+        params.euribor_curve = vec![EuriborPoint {
+            date_from: NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+            rate: 4.0,
+        }];
         let result = Calculator::calculate(&params).unwrap();
         let p2026 = result
             .payments

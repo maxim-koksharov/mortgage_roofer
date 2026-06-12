@@ -1,6 +1,6 @@
 use chrono::NaiveDate;
-use mortgage_core::models::*;
 use mortgage_core::Calculator;
+use mortgage_core::models::*;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Screen {
@@ -13,6 +13,7 @@ pub enum Screen {
 pub enum Field {
     Amount,
     Term,
+    StartDate,
     Currency,
     PaymentType,
     RateMode,
@@ -39,6 +40,7 @@ pub struct App {
 
     pub amount: String,
     pub term: String,
+    pub start_date: String,
     pub currency: usize,
     pub payment_type: usize,
     pub rate_mode: usize,
@@ -61,6 +63,14 @@ pub struct App {
     pub params: Option<LoanParams>,
     pub scroll_offset: usize,
     pub popup_msg: Option<String>,
+    pub show_yearly: bool,
+    pub show_analysis: Option<AnalysisView>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum AnalysisView {
+    Sensitivity(Vec<mortgage_core::SensitivityPoint>),
+    BreakEven(mortgage_core::BreakEvenResult),
 }
 
 impl App {
@@ -71,6 +81,10 @@ impl App {
             selected: 0,
             amount: "185000".to_string(),
             term: "30".to_string(),
+            start_date: chrono::Local::now()
+                .date_naive()
+                .format("%Y-%m-%d")
+                .to_string(),
             currency: 0,
             payment_type: 0,
             rate_mode: 0,
@@ -92,6 +106,8 @@ impl App {
             params: None,
             scroll_offset: 0,
             popup_msg: None,
+            show_yearly: false,
+            show_analysis: None,
         };
         app.rebuild_fields();
         app
@@ -101,6 +117,7 @@ impl App {
         let mut f = vec![
             Field::Amount,
             Field::Term,
+            Field::StartDate,
             Field::Currency,
             Field::PaymentType,
             Field::RateMode,
@@ -138,6 +155,7 @@ impl App {
         match self.fields[self.selected] {
             Field::Amount => self.amount.push(c),
             Field::Term => self.term.push(c),
+            Field::StartDate => self.start_date.push(c),
             Field::FixRate => self.fix_rate.push(c),
             Field::FixSpread => self.fix_spread.push(c),
             Field::EuriborSpread => self.euribor_spread.push(c),
@@ -153,17 +171,42 @@ impl App {
 
     pub fn backspace(&mut self) {
         match self.fields[self.selected] {
-            Field::Amount => { self.amount.pop(); }
-            Field::Term => { self.term.pop(); }
-            Field::FixRate => { self.fix_rate.pop(); }
-            Field::FixSpread => { self.fix_spread.pop(); }
-            Field::EuriborSpread => { self.euribor_spread.pop(); }
-            Field::MixedFixYears => { self.mixed_fix_years.pop(); }
-            Field::MixedFixRate => { self.mixed_fix_rate.pop(); }
-            Field::MixedFixSpread => { self.mixed_fix_spread.pop(); }
-            Field::MixedEuriborSpread => { self.mixed_euribor_spread.pop(); }
-            Field::PrepaymentDate => { self.prepayment_date.pop(); }
-            Field::PrepaymentAmount => { self.prepayment_amount.pop(); }
+            Field::Amount => {
+                self.amount.pop();
+            }
+            Field::Term => {
+                self.term.pop();
+            }
+            Field::StartDate => {
+                self.start_date.pop();
+            }
+            Field::FixRate => {
+                self.fix_rate.pop();
+            }
+            Field::FixSpread => {
+                self.fix_spread.pop();
+            }
+            Field::EuriborSpread => {
+                self.euribor_spread.pop();
+            }
+            Field::MixedFixYears => {
+                self.mixed_fix_years.pop();
+            }
+            Field::MixedFixRate => {
+                self.mixed_fix_rate.pop();
+            }
+            Field::MixedFixSpread => {
+                self.mixed_fix_spread.pop();
+            }
+            Field::MixedEuriborSpread => {
+                self.mixed_euribor_spread.pop();
+            }
+            Field::PrepaymentDate => {
+                self.prepayment_date.pop();
+            }
+            Field::PrepaymentAmount => {
+                self.prepayment_amount.pop();
+            }
             _ => {}
         }
     }
@@ -188,13 +231,15 @@ impl App {
                 self.euribor_tenor = ((self.euribor_tenor as i8 + delta).rem_euclid(4)) as usize;
             }
             Field::MixedEuriborTenor => {
-                self.mixed_euribor_tenor = ((self.mixed_euribor_tenor as i8 + delta).rem_euclid(4)) as usize;
+                self.mixed_euribor_tenor =
+                    ((self.mixed_euribor_tenor as i8 + delta).rem_euclid(4)) as usize;
             }
             Field::SameSpread => {
                 self.same_spread = !self.same_spread;
             }
             Field::PrepaymentEffect => {
-                self.prepayment_effect = ((self.prepayment_effect as i8 + delta).rem_euclid(2)) as usize;
+                self.prepayment_effect =
+                    ((self.prepayment_effect as i8 + delta).rem_euclid(2)) as usize;
             }
             _ => {}
         }
@@ -203,28 +248,59 @@ impl App {
     pub fn calculate(&mut self) -> Result<(), String> {
         let amount = self.amount.parse::<f64>().map_err(|_| "Invalid amount")?;
         let term_years = self.term.parse::<u32>().map_err(|_| "Invalid term")?;
-        let currency = if self.currency == 0 { Currency::Eur } else { Currency::Usd };
-        let payment_type = if self.payment_type == 0 { PaymentType::Annuity } else { PaymentType::Diff };
-        let start_date = chrono::Local::now().date_naive();
+        let currency = if self.currency == 0 {
+            Currency::Eur
+        } else {
+            Currency::Usd
+        };
+        let payment_type = if self.payment_type == 0 {
+            PaymentType::Annuity
+        } else {
+            PaymentType::Diff
+        };
+        let start_date = chrono::NaiveDate::parse_from_str(&self.start_date, "%Y-%m-%d")
+            .map_err(|_| "Invalid start date (YYYY-MM-DD)")?;
 
         let rate_mode = match self.rate_mode {
             0 => RateMode::Fix {
-                rate: self.fix_rate.parse::<f64>().map_err(|_| "Invalid fix rate")?,
-                spread: self.fix_spread.parse::<f64>().map_err(|_| "Invalid fix spread")?,
+                rate: self
+                    .fix_rate
+                    .parse::<f64>()
+                    .map_err(|_| "Invalid fix rate")?,
+                spread: self
+                    .fix_spread
+                    .parse::<f64>()
+                    .map_err(|_| "Invalid fix spread")?,
             },
             1 => RateMode::Euribor {
                 tenor: tenor_from_idx(self.euribor_tenor),
-                spread: self.euribor_spread.parse::<f64>().map_err(|_| "Invalid euribor spread")?,
+                spread: self
+                    .euribor_spread
+                    .parse::<f64>()
+                    .map_err(|_| "Invalid euribor spread")?,
             },
             2 => RateMode::Mixed {
-                fix_years: self.mixed_fix_years.parse::<f64>().map_err(|_| "Invalid fix years")?,
-                fix_rate: self.mixed_fix_rate.parse::<f64>().map_err(|_| "Invalid mixed fix rate")?,
-                fix_spread: self.mixed_fix_spread.parse::<f64>().map_err(|_| "Invalid mixed fix spread")?,
+                fix_years: self
+                    .mixed_fix_years
+                    .parse::<f64>()
+                    .map_err(|_| "Invalid fix years")?,
+                fix_rate: self
+                    .mixed_fix_rate
+                    .parse::<f64>()
+                    .map_err(|_| "Invalid mixed fix rate")?,
+                fix_spread: self
+                    .mixed_fix_spread
+                    .parse::<f64>()
+                    .map_err(|_| "Invalid mixed fix spread")?,
                 euribor_tenor: tenor_from_idx(self.mixed_euribor_tenor),
                 euribor_spread: if self.same_spread {
-                    self.mixed_fix_spread.parse::<f64>().map_err(|_| "Invalid spread")?
+                    self.mixed_fix_spread
+                        .parse::<f64>()
+                        .map_err(|_| "Invalid spread")?
                 } else {
-                    self.mixed_euribor_spread.parse::<f64>().map_err(|_| "Invalid euribor spread")?
+                    self.mixed_euribor_spread
+                        .parse::<f64>()
+                        .map_err(|_| "Invalid euribor spread")?
                 },
             },
             _ => return Err("Unknown rate mode".to_string()),
@@ -252,7 +328,9 @@ impl App {
     pub fn add_prepayment(&mut self) -> Result<(), String> {
         let date = NaiveDate::parse_from_str(&self.prepayment_date, "%Y-%m-%d")
             .map_err(|_| "Invalid prepayment date (YYYY-MM-DD)")?;
-        let amount = self.prepayment_amount.parse::<f64>()
+        let amount = self
+            .prepayment_amount
+            .parse::<f64>()
             .map_err(|_| "Invalid prepayment amount")?;
         if amount <= 0.0 {
             return Err("Prepayment amount must be positive".to_string());
@@ -262,14 +340,49 @@ impl App {
         } else {
             PrepaymentEffect::ReducePayment
         };
-        self.prepayments.push(Prepayment { date, amount, effect });
+        self.prepayments.push(Prepayment {
+            date,
+            amount,
+            effect,
+        });
         self.prepayment_amount = "0".to_string();
         Ok(())
     }
 
-    pub fn remove_prepayment(&mut self, idx: usize) {
-        if idx < self.prepayments.len() {
-            self.prepayments.remove(idx);
+    pub fn save_session(&mut self, path: &str) {
+        if let (Some(params), Some(result)) = (&self.params, &self.result) {
+            match mortgage_core::save_session(path, params, result) {
+                Ok(()) => self.popup_msg = Some(format!("Session saved to {}", path)),
+                Err(e) => self.popup_msg = Some(format!("Save failed: {}", e)),
+            }
+            self.screen = Screen::Popup(self.popup_msg.clone().unwrap());
+        }
+    }
+
+    pub fn load_session(&mut self, path: &str) {
+        match mortgage_core::load_session(path) {
+            Ok(session) => {
+                self.amount = format!("{}", session.params.amount);
+                self.term = format!("{}", session.params.term_years);
+                self.start_date = session.params.start_date.format("%Y-%m-%d").to_string();
+                self.currency = match session.params.currency {
+                    Currency::Eur => 0,
+                    Currency::Usd => 1,
+                };
+                self.payment_type = match session.params.payment_type {
+                    PaymentType::Annuity => 0,
+                    PaymentType::Diff => 1,
+                };
+                self.prepayments = session.params.prepayments;
+                self.result = Some(session.result);
+                self.params = None;
+                self.popup_msg = Some("Session loaded".to_string());
+                self.screen = Screen::Results;
+            }
+            Err(e) => {
+                self.popup_msg = Some(format!("Load failed: {}", e));
+                self.screen = Screen::Popup(self.popup_msg.clone().unwrap());
+            }
         }
     }
 }

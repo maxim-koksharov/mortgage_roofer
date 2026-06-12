@@ -106,33 +106,114 @@ struct Args {
     /// Show yearly summary instead of monthly table
     #[arg(long)]
     yearly: bool,
+
+    /// Prepayment in format "YYYY-MM-DD:amount:effect" (effect: ReduceTerm or ReducePayment). Can be repeated.
+    #[arg(long = "prepayment", num_args = 1)]
+    prepayments: Vec<String>,
+
+    /// Save session to JSON file after calculation
+    #[arg(long)]
+    save: Option<PathBuf>,
+
+    /// Load session from JSON file (overrides other args)
+    #[arg(long)]
+    load: Option<PathBuf>,
+
+    /// Show rate sensitivity analysis with given deltas (comma-separated, e.g. "-1,-0.5,0,0.5,1")
+    #[arg(long)]
+    sensitivity: Option<String>,
+
+    /// Show break-even analysis vs rent (monthly rent amount)
+    #[arg(long)]
+    break_even_rent: Option<f64>,
 }
 
 fn main() {
     let args = Args::parse();
 
-    let params = if let Some(config_path) = args.config {
-        let content = fs::read_to_string(&config_path)
-            .unwrap_or_else(|e| panic!("Failed to read config file: {}", e));
-        serde_json::from_str(&content)
-            .unwrap_or_else(|e| panic!("Failed to parse config JSON: {}", e))
+    let (params, result) = if let Some(load_path) = args.load {
+        let session = mortgage_core::load_session(&load_path)
+            .unwrap_or_else(|e| panic!("Failed to load session: {}", e));
+        (session.params, session.result)
     } else {
-        build_params_from_args(&args)
+        let mut params = if let Some(config_path) = args.config {
+            let content = fs::read_to_string(&config_path)
+                .unwrap_or_else(|e| panic!("Failed to read config file: {}", e));
+            serde_json::from_str(&content)
+                .unwrap_or_else(|e| panic!("Failed to parse config JSON: {}", e))
+        } else {
+            build_params_from_args(&args)
+        };
+
+        for prep_str in &args.prepayments {
+            let parts: Vec<&str> = prep_str.split(':').collect();
+            if parts.len() != 3 {
+                eprintln!(
+                    "Invalid prepayment format: {}. Use YYYY-MM-DD:amount:effect",
+                    prep_str
+                );
+                std::process::exit(1);
+            }
+            let date = parts[0]
+                .parse::<chrono::NaiveDate>()
+                .unwrap_or_else(|_| panic!("Invalid prepayment date: {}", parts[0]));
+            let amount: f64 = parts[1]
+                .parse()
+                .unwrap_or_else(|_| panic!("Invalid prepayment amount: {}", parts[1]));
+            let effect = match parts[2] {
+                "ReduceTerm" => PrepaymentEffect::ReduceTerm,
+                "ReducePayment" => PrepaymentEffect::ReducePayment,
+                _ => panic!(
+                    "Invalid prepayment effect: {}. Use ReduceTerm or ReducePayment",
+                    parts[2]
+                ),
+            };
+            params.prepayments.push(Prepayment {
+                date,
+                amount,
+                effect,
+            });
+        }
+
+        let result = match Calculator::calculate(&params) {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("Calculation error: {}", e);
+                std::process::exit(1);
+            }
+        };
+        (params, result)
     };
 
-    let result = match Calculator::calculate(&params) {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!("Calculation error: {}", e);
-            std::process::exit(1);
-        }
-    };
+    if let Some(save_path) = args.save {
+        mortgage_core::save_session(&save_path, &params, &result)
+            .unwrap_or_else(|e| panic!("Failed to save session: {}", e));
+        println!("Session saved to {}", save_path.display());
+    }
+
+    if let Some(sensitivity_str) = &args.sensitivity {
+        let deltas: Vec<f64> = sensitivity_str
+            .split(',')
+            .filter_map(|s| s.trim().parse().ok())
+            .collect();
+        let points = mortgage_core::sensitivity_analysis(&params, &deltas);
+        print_sensitivity(&params, &points);
+    }
+
+    if let Some(rent) = args.break_even_rent {
+        let be = mortgage_core::break_even_analysis(&params, rent);
+        print_break_even(&be);
+    }
 
     if let Some(output_path) = args.output {
         let csv = payments_to_csv(&result.payments);
         fs::write(&output_path, csv)
             .unwrap_or_else(|e| panic!("Failed to write output file: {}", e));
-        println!("Saved {} payments to {}", result.payments.len(), output_path.display());
+        println!(
+            "Saved {} payments to {}",
+            result.payments.len(),
+            output_path.display()
+        );
     } else if args.format == "csv" {
         print!("{}", payments_to_csv(&result.payments));
     } else {
@@ -148,7 +229,11 @@ fn main() {
 fn build_params_from_args(args: &Args) -> LoanParams {
     let amount = args.amount.unwrap_or(100_000.0);
     let term_years = args.term.unwrap_or(10);
-    let payment_type = match args.payment_type.as_ref().unwrap_or(&CliPaymentType::Annuity) {
+    let payment_type = match args
+        .payment_type
+        .as_ref()
+        .unwrap_or(&CliPaymentType::Annuity)
+    {
         CliPaymentType::Annuity => PaymentType::Annuity,
         CliPaymentType::Diff => PaymentType::Diff,
     };
@@ -226,23 +311,31 @@ fn print_summary(params: &LoanParams, result: &LoanResult) {
     println!("Total paid:      {}{:.2}", sym, result.total_paid);
     println!("Payments count:  {}", result.payments.len());
     if let Some(idx) = result.principal_exceeds_interest_at {
-        println!("Principal > Interest at payment #{} ({})", idx + 1, result.payments[idx].date);
+        println!(
+            "Principal > Interest at payment #{} ({})",
+            idx + 1,
+            result.payments[idx].date
+        );
     }
     println!();
 }
 
 fn print_table(payments: &[Payment], limit: usize) {
-    println!("{:>5} {:>12} {:>12} {:>12} {:>12} {:>12}",
-             "#", "Date", "Payment", "Principal", "Interest", "Balance");
+    println!(
+        "{:>5} {:>12} {:>12} {:>12} {:>12} {:>12}",
+        "#", "Date", "Payment", "Principal", "Interest", "Balance"
+    );
     println!("{}", "-".repeat(70));
     for (i, p) in payments.iter().take(limit).enumerate() {
-        println!("{:>5} {:>12} {:>12.2} {:>12.2} {:>12.2} {:>12.2}",
-                 i + 1,
-                 p.date,
-                 p.payment,
-                 p.principal,
-                 p.interest,
-                 p.remaining_balance);
+        println!(
+            "{:>5} {:>12} {:>12.2} {:>12.2} {:>12.2} {:>12.2}",
+            i + 1,
+            p.date,
+            p.payment,
+            p.principal,
+            p.interest,
+            p.remaining_balance
+        );
     }
     if payments.len() > limit {
         println!("... ({} more payments)", payments.len() - limit);
@@ -252,12 +345,50 @@ fn print_table(payments: &[Payment], limit: usize) {
 fn print_yearly(result: &LoanResult) {
     let summaries = result.yearly_summaries();
     println!("=== Yearly Summary ===");
-    println!("{:>6} {:>14} {:>14} {:>14} {:>6} {:>14}",
-             "Year", "Payment", "Principal", "Interest", "Months", "Balance");
+    println!(
+        "{:>6} {:>14} {:>14} {:>14} {:>6} {:>14}",
+        "Year", "Payment", "Principal", "Interest", "Months", "Balance"
+    );
     println!("{}", "-".repeat(72));
     for s in &summaries {
-        println!("{:>6} {:>14.2} {:>14.2} {:>14.2} {:>6} {:>14.2}",
-                 s.year, s.total_payment, s.total_principal, s.total_interest,
-                 s.payments_count, s.ending_balance);
+        println!(
+            "{:>6} {:>14.2} {:>14.2} {:>14.2} {:>6} {:>14.2}",
+            s.year,
+            s.total_payment,
+            s.total_principal,
+            s.total_interest,
+            s.payments_count,
+            s.ending_balance
+        );
     }
+}
+
+fn print_sensitivity(_params: &LoanParams, points: &[mortgage_core::SensitivityPoint]) {
+    println!("=== Rate Sensitivity Analysis ===");
+    println!(
+        "{:>10} {:>10} {:>14} {:>14} {:>14}",
+        "Delta", "Rate %", "Monthly", "Interest", "Total Paid"
+    );
+    println!("{}", "-".repeat(66));
+    for p in points {
+        let monthly = p
+            .monthly_payment
+            .map(|m| format!("{:.2}", m))
+            .unwrap_or_else(|| "N/A".to_string());
+        println!(
+            "{:>+10.2} {:>10.2} {:>14} {:>14.2} {:>14.2}",
+            p.rate_delta, p.effective_rate, monthly, p.total_interest, p.total_paid
+        );
+    }
+}
+
+fn print_break_even(be: &mortgage_core::BreakEvenResult) {
+    println!("=== Break-Even vs Rent ===");
+    println!("Monthly rent:      {:.2}", be.monthly_rent);
+    println!("Monthly mortgage:  {:.2}", be.monthly_cost);
+    println!("Total interest:    {:.2}", be.total_interest);
+    if let (Some(months), Some(years)) = (be.break_even_months, be.break_even_years) {
+        println!("Break-even:        {} months ({:.1} years)", months, years);
+    }
+    println!("Note:              {}", be.explanation);
 }

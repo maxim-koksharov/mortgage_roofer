@@ -32,7 +32,11 @@ pub fn fetch_euribor(tenor: EuriborTenor) -> Result<f64, MortgageError> {
         .and_then(|v| v.get("0"))
         .and_then(|v| v.get(0))
         .and_then(|v| v.as_f64())
-        .ok_or_else(|| MortgageError::EuriborFetchError("Could not extract Euribor value from response".to_string()))?;
+        .ok_or_else(|| {
+            MortgageError::EuriborFetchError(
+                "Could not extract Euribor value from response".to_string(),
+            )
+        })?;
 
     Ok(value)
 }
@@ -55,10 +59,10 @@ impl EuriborCache {
         let today = chrono::Local::now().date_naive();
         if let (Some(cached_tenor), Some(cached_date), Some(cached_rate)) =
             (self.tenor, self.fetched_at, self.rate)
+            && cached_tenor == tenor
+            && cached_date == today
         {
-            if cached_tenor == tenor && cached_date == today {
-                return Ok(cached_rate);
-            }
+            return Ok(cached_rate);
         }
         let rate = fetch_euribor(tenor)?;
         self.tenor = Some(tenor);

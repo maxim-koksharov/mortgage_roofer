@@ -25,9 +25,8 @@ use crate::models::Payment;
 /// assert!(csv.contains("date,payment,principal,interest,remaining_balance,applied_rate"));
 /// ```
 pub fn payments_to_csv(payments: &[Payment]) -> String {
-    let mut lines = vec![
-        "date,payment,principal,interest,remaining_balance,applied_rate".to_string(),
-    ];
+    let mut lines =
+        vec!["date,payment,principal,interest,remaining_balance,applied_rate".to_string()];
     for p in payments {
         lines.push(format!(
             "{},{:.2},{:.2},{:.2},{:.2},{:.4}",

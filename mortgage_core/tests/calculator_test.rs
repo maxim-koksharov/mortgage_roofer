@@ -1,6 +1,6 @@
 use chrono::NaiveDate;
-use mortgage_core::models::*;
 use mortgage_core::Calculator;
+use mortgage_core::models::*;
 
 fn base_params() -> LoanParams {
     LoanParams {
@@ -9,7 +9,10 @@ fn base_params() -> LoanParams {
         payment_type: PaymentType::Annuity,
         currency: Currency::Eur,
         start_date: NaiveDate::from_ymd_opt(2025, 1, 1).unwrap(),
-        rate_mode: RateMode::Fix { rate: 5.0, spread: 0.0 },
+        rate_mode: RateMode::Fix {
+            rate: 5.0,
+            spread: 0.0,
+        },
         same_spread: false,
         euribor_curve: vec![],
         prepayments: vec![],
@@ -60,7 +63,10 @@ fn test_fifty_year_term() {
 #[test]
 fn test_very_high_rate() {
     let mut params = base_params();
-    params.rate_mode = RateMode::Fix { rate: 50.0, spread: 0.0 };
+    params.rate_mode = RateMode::Fix {
+        rate: 50.0,
+        spread: 0.0,
+    };
     let result = Calculator::calculate(&params).unwrap();
     assert!(result.total_interest > result.total_principal);
 }
@@ -69,7 +75,10 @@ fn test_very_high_rate() {
 fn test_diff_with_zero_rate() {
     let mut params = base_params();
     params.payment_type = PaymentType::Diff;
-    params.rate_mode = RateMode::Fix { rate: 0.0, spread: 0.0 };
+    params.rate_mode = RateMode::Fix {
+        rate: 0.0,
+        spread: 0.0,
+    };
     let result = Calculator::calculate(&params).unwrap();
     assert_eq!(result.total_interest, 0.0);
     let expected_monthly = 100_000.0 / 120.0;
@@ -147,7 +156,11 @@ fn test_balance_never_negative() {
     });
     let result = Calculator::calculate(&params).unwrap();
     for p in &result.payments {
-        assert!(p.remaining_balance >= 0.0, "Balance went negative: {}", p.remaining_balance);
+        assert!(
+            p.remaining_balance >= 0.0,
+            "Balance went negative: {}",
+            p.remaining_balance
+        );
     }
 }
 
