@@ -1,3 +1,4 @@
+mod chart;
 
 use iced::{
     widget::{
@@ -7,7 +8,7 @@ use iced::{
 };
 use image::open as image_open;
 use mortgage_core::models::*;
-use mortgage_core::Calculator;
+use mortgage_core::{Calculator, payments_to_csv};
 use std::fs;
 
 pub fn main() -> iced::Result {
@@ -484,14 +485,26 @@ fn calculate(state: &mut State) {
         prepayments,
     };
 
-    state.result = Some(Calculator::calculate(&params));
+    state.result = Some(Calculator::calculate(&params).unwrap_or_else(|e| {
+        state.status = format!("Calculation error: {}", e);
+        return mortgage_core::LoanResult {
+            monthly_payment: None,
+            total_principal: 0.0,
+            total_interest: 0.0,
+            total_paid: 0.0,
+            payments: vec![],
+            principal_exceeds_interest_at: None,
+        };
+    }));
     state.chart_svg = None;
-    state.status = String::new();
+    if state.status.is_empty() {
+        state.status = String::new();
+    }
 }
 
 fn generate_chart(state: &mut State) {
     if let Some(ref result) = state.result {
-        state.chart_svg = Some(generate_stacked_bar_chart_svg(result));
+        state.chart_svg = Some(chart::generate_stacked_bar_chart_svg(result));
     }
 }
 
@@ -567,7 +580,7 @@ fn export_pdf(state: &mut State) {
         }
 
         // Add chart page
-        let png_bytes = generate_chart_png(result);
+        let png_bytes = chart::generate_stacked_bar_chart_png(result);
         let png_path = "/tmp/mortgage_chart.png";
         let _ = fs::write(png_path, &png_bytes);
         let dynamic_image = image_open(png_path).expect("PNG open");
@@ -598,19 +611,6 @@ fn export_pdf(state: &mut State) {
     }
 }
 
-fn payments_to_csv(payments: &[Payment]) -> String {
-    let mut lines = vec![
-        "date,payment,principal,interest,remaining_balance,applied_rate".to_string(),
-    ];
-    for p in payments {
-        lines.push(format!(
-            "{},{:.2},{:.2},{:.2},{:.2},{:.4}",
-            p.date, p.payment, p.principal, p.interest, p.remaining_balance, p.applied_rate
-        ));
-    }
-    lines.join("\n") + "\n"
-}
-
 fn parse_tenor(s: &str) -> EuriborTenor {
     match s {
         "1m" => EuriborTenor::OneMonth,
@@ -620,146 +620,3 @@ fn parse_tenor(s: &str) -> EuriborTenor {
     }
 }
 
-fn generate_stacked_bar_chart_svg(result: &LoanResult) -> String {
-    use plotters::prelude::*;
-
-    let mut svg_data = String::new();
-    {
-        let root = SVGBackend::with_string(&mut svg_data, (900, 500)).into_drawing_area();
-        root.fill(&WHITE).unwrap();
-
-        let n = result.payments.len();
-        let max_y = result.payments
-            .iter()
-            .map(|p| p.principal + p.interest)
-            .fold(0.0, f64::max)
-            * 1.1;
-
-        let mut chart = ChartBuilder::on(&root)
-            .caption("Principal vs Interest (Stacked)", ("sans-serif", 28))
-            .margin(10)
-            .x_label_area_size(30)
-            .y_label_area_size(50)
-            .build_cartesian_2d(0.0..n as f64, 0.0..max_y)
-            .unwrap();
-
-        chart.configure_mesh().draw().unwrap();
-
-        let bar_width = 0.8;
-        for (idx, p) in result.payments.iter().enumerate() {
-            let x = idx as f64;
-            chart.draw_series(std::iter::once(
-                Rectangle::new(
-                    [(x - bar_width / 2.0, 0.0), (x + bar_width / 2.0, p.principal)],
-                    GREEN.filled(),
-                ),
-            )).unwrap();
-            chart.draw_series(std::iter::once(
-                Rectangle::new(
-                    [(x - bar_width / 2.0, p.principal), (x + bar_width / 2.0, p.principal + p.interest)],
-                    RED.filled(),
-                ),
-            )).unwrap();
-        }
-
-        // Marker for principal > interest crossing
-        if let Some(cross_idx) = result.principal_exceeds_interest_at {
-            let cross_payment = &result.payments[cross_idx];
-            chart.draw_series(std::iter::once(
-                Circle::new((cross_idx as f64, cross_payment.principal + cross_payment.interest), 6, BLUE.filled()),
-            )).unwrap();
-            chart.draw_series(std::iter::once(
-                Text::new(
-                    format!("Cross #{} ({})", cross_idx + 1, cross_payment.date),
-                    (cross_idx as f64, max_y * 0.92),
-                    ("sans-serif", 12).into_font().color(&BLUE),
-                ),
-            )).unwrap();
-        }
-
-        chart
-            .configure_series_labels()
-            .border_style(&BLACK)
-            .draw()
-            .unwrap();
-    }
-
-    svg_data
-}
-
-fn generate_chart_png(result: &LoanResult) -> Vec<u8> {
-    use plotters::prelude::*;
-    use image::ImageEncoder;
-
-    let width = 900u32;
-    let height = 500u32;
-    let mut raw = vec![0u8; (width * height * 3) as usize];
-    {
-        let root = BitMapBackend::with_buffer(&mut raw, (width, height)).into_drawing_area();
-        root.fill(&WHITE).unwrap();
-
-        let n = result.payments.len();
-        let max_y = result.payments
-            .iter()
-            .map(|p| p.principal + p.interest)
-            .fold(0.0, f64::max)
-            * 1.1;
-
-        let mut chart = ChartBuilder::on(&root)
-            .caption("Principal vs Interest (Stacked)", ("sans-serif", 28))
-            .margin(10)
-            .x_label_area_size(30)
-            .y_label_area_size(50)
-            .build_cartesian_2d(0.0..n as f64, 0.0..max_y)
-            .unwrap();
-
-        chart.configure_mesh().draw().unwrap();
-
-        let bar_width = 0.8;
-        for (idx, p) in result.payments.iter().enumerate() {
-            let x = idx as f64;
-            chart.draw_series(std::iter::once(
-                Rectangle::new(
-                    [(x - bar_width / 2.0, 0.0), (x + bar_width / 2.0, p.principal)],
-                    GREEN.filled(),
-                ),
-            )).unwrap();
-            chart.draw_series(std::iter::once(
-                Rectangle::new(
-                    [(x - bar_width / 2.0, p.principal), (x + bar_width / 2.0, p.principal + p.interest)],
-                    RED.filled(),
-                ),
-            )).unwrap();
-        }
-
-        if let Some(cross_idx) = result.principal_exceeds_interest_at {
-            let cross_payment = &result.payments[cross_idx];
-            chart.draw_series(std::iter::once(
-                Circle::new((cross_idx as f64, cross_payment.principal + cross_payment.interest), 6, BLUE.filled()),
-            )).unwrap();
-            chart.draw_series(std::iter::once(
-                Text::new(
-                    format!("Cross #{} ({})", cross_idx + 1, cross_payment.date),
-                    (cross_idx as f64, max_y * 0.92),
-                    ("sans-serif", 12).into_font().color(&BLUE),
-                ),
-            )).unwrap();
-        }
-
-        chart
-            .configure_series_labels()
-            .border_style(&BLACK)
-            .draw()
-            .unwrap();
-    }
-
-    // Encode raw RGB to PNG
-    let mut png_buf = Vec::new();
-    {
-        let mut cursor = std::io::Cursor::new(&mut png_buf);
-        image::codecs::png::PngEncoder::new(&mut cursor)
-            .write_image(&raw, width, height, image::ColorType::Rgb8)
-            .unwrap();
-    }
-    png_buf
-}

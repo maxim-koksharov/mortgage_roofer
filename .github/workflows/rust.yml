@@ -24,5 +24,11 @@ jobs:
     - name: Build workspace
       run: cargo build --workspace --verbose
 
+    - name: Check formatting
+      run: cargo fmt --all -- --check
+
+    - name: Run clippy
+      run: cargo clippy --workspace -- -D warnings
+
     - name: Run tests
       run: cargo test --workspace --verbose
