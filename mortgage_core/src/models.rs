@@ -299,3 +299,45 @@ pub struct LoanResult {
     /// Index of the first payment where principal > interest, if any.
     pub principal_exceeds_interest_at: Option<usize>,
 }
+
+/// Yearly aggregate of payments.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct YearlySummary {
+    pub year: i32,
+    pub total_payment: f64,
+    pub total_principal: f64,
+    pub total_interest: f64,
+    pub payments_count: usize,
+    pub ending_balance: f64,
+}
+
+impl LoanResult {
+    pub fn yearly_summaries(&self) -> Vec<YearlySummary> {
+        use chrono::Datelike;
+        let mut summaries: Vec<YearlySummary> = Vec::new();
+
+        for p in &self.payments {
+            let year = p.date.year();
+            if let Some(last) = summaries.last_mut() {
+                if last.year == year {
+                    last.total_payment += p.payment;
+                    last.total_principal += p.principal;
+                    last.total_interest += p.interest;
+                    last.payments_count += 1;
+                    last.ending_balance = p.remaining_balance;
+                    continue;
+                }
+            }
+            summaries.push(YearlySummary {
+                year,
+                total_payment: p.payment,
+                total_principal: p.principal,
+                total_interest: p.interest,
+                payments_count: 1,
+                ending_balance: p.remaining_balance,
+            });
+        }
+
+        summaries
+    }
+}

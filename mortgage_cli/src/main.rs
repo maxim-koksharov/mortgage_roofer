@@ -102,6 +102,10 @@ struct Args {
     /// Number of payments to display in table mode
     #[arg(long, default_value = "24")]
     limit: usize,
+
+    /// Show yearly summary instead of monthly table
+    #[arg(long)]
+    yearly: bool,
 }
 
 fn main() {
@@ -133,7 +137,11 @@ fn main() {
         print!("{}", payments_to_csv(&result.payments));
     } else {
         print_summary(&params, &result);
-        print_table(&result.payments, args.limit);
+        if args.yearly {
+            print_yearly(&result);
+        } else {
+            print_table(&result.payments, args.limit);
+        }
     }
 }
 
@@ -238,5 +246,18 @@ fn print_table(payments: &[Payment], limit: usize) {
     }
     if payments.len() > limit {
         println!("... ({} more payments)", payments.len() - limit);
+    }
+}
+
+fn print_yearly(result: &LoanResult) {
+    let summaries = result.yearly_summaries();
+    println!("=== Yearly Summary ===");
+    println!("{:>6} {:>14} {:>14} {:>14} {:>6} {:>14}",
+             "Year", "Payment", "Principal", "Interest", "Months", "Balance");
+    println!("{}", "-".repeat(72));
+    for s in &summaries {
+        println!("{:>6} {:>14.2} {:>14.2} {:>14.2} {:>6} {:>14.2}",
+                 s.year, s.total_payment, s.total_principal, s.total_interest,
+                 s.payments_count, s.ending_balance);
     }
 }
