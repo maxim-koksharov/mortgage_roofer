@@ -6,7 +6,11 @@
 
 - `models` — доменные модели (LoanParams, Payment, LoanResult, RateMode, и т.д.)
 - `calculator` — расчёт графика платежей
+- `analysis` — анализ чувствительности и break-even анализ
 - `euribor` — загрузка ставок Euribor с ECB API
+- `export` — экспорт в CSV
+- `session` — сохранение/загрузка сессий
+- `error` — типизированные ошибки
 
 ## Модели
 
@@ -65,20 +69,82 @@ pub struct LoanParams {
 }
 ```
 
+### `YearlySummary`
+```rust
+pub struct YearlySummary {
+    pub year: i32,
+    pub total_payment: f64,
+    pub total_principal: f64,
+    pub total_interest: f64,
+    pub payments_count: usize,
+    pub ending_balance: f64,
+}
+```
+
 ## API Калькулятора
 
 ```rust
 use mortgage_core::{Calculator, LoanParams};
 
 let params = LoanParams { /* ... */ };
-let result = Calculator::calculate(&params);
+let result = Calculator::calculate(&params)?;
 
 println!("Monthly: {:?}", result.monthly_payment);
 println!("Total interest: {}", result.total_interest);
+
+// Годовая сводка
+for s in result.yearly_summaries() {
+    println!("{}: payment={:.2} principal={:.2} interest={:.2} balance={:.2}",
+        s.year, s.total_payment, s.total_principal, s.total_interest, s.ending_balance);
+}
+
+// Таблица платежей
 for p in &result.payments {
     println!("{}: payment={:.2} principal={:.2} interest={:.2} balance={:.2}",
         p.date, p.payment, p.principal, p.interest, p.remaining_balance);
 }
+```
+
+## Анализ
+
+### Rate Sensitivity
+```rust
+use mortgage_core::sensitivity_analysis;
+
+let deltas = vec![-2.0, -1.0, 0.0, 1.0, 2.0];
+let points = sensitivity_analysis(&params, &deltas);
+
+for p in &points {
+    println!("Delta: {:+.2}%, Rate: {:.2}%, Monthly: {:?}, Interest: {:.2}",
+        p.rate_delta, p.effective_rate, p.monthly_payment, p.total_interest);
+}
+```
+
+### Break-Even vs Rent
+```rust
+use mortgage_core::break_even_analysis;
+
+let monthly_rent = 1000.0;
+let be = break_even_analysis(&params, monthly_rent);
+
+println!("Monthly mortgage: {:.2}", be.monthly_cost);
+if let (Some(months), Some(years)) = (be.break_even_months, be.break_even_years) {
+    println!("Break-even: {} months ({:.1} years)", months, years);
+}
+println!("{}", be.explanation);
+```
+
+## Сессии
+
+```rust
+use mortgage_core::{save_session, load_session};
+
+// Сохранение
+save_session("session.json", &params, &result)?;
+
+// Загрузка
+let session = load_session("session.json")?;
+// session.params, session.result
 ```
 
 ## Euribor
@@ -107,14 +173,12 @@ let rate = cache.get_or_fetch(EuriborTenor::SixMonths)?;
 cargo test -p mortgage_core
 ```
 
-Покрывают:
-- Аннуитет и дифференцированный платёж
-- Досрочное погашение (ReduceTerm / ReducePayment)
-- Смешанный режим ставки (Mixed)
-- Ручную кривую Euribor
-- Флаг same_spread
-- Граничные случаи (0% ставка)
-- Точка пересечения principal > interest
+70 тестов покрывают:
+- Unit-тесты калькулятора (11)
+- Edge cases (19)
+- Serde round-trip (19)
+- Property-based tests с proptest (8)
+- Doc tests (3)
 
 ## Serde
 
@@ -123,3 +187,22 @@ cargo test -p mortgage_core
 let json = serde_json::to_string(&params)?;
 let params: LoanParams = serde_json::from_str(&json)?;
 ```
+
+## Валидация
+
+```rust
+let errors = params.validate();
+if !errors.is_empty() {
+    for e in &errors {
+        eprintln!("Validation error: {}", e);
+    }
+}
+```
+
+Проверяет:
+- Amount > 0 и <= 100,000,000
+- Term > 0 и <= 50 лет
+- Rate >= 0 и <= 100%
+- Spread >= 0
+- Prepayment date >= start_date
+- Prepayment amount > 0

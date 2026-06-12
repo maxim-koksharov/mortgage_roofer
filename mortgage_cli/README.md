@@ -5,9 +5,9 @@
 ## Зависимости
 
 - `clap` — парсинг аргументов
-- `mortgage_core` — расчёты
-- `serde_json` — JSON-конфиги
-- `csv` — экспорт в CSV
+- `mortgage_core` — расчёты, анализ, сессии
+- `serde_json` — JSON-конфиги и сессии
+- `chrono` — работа с датами
 
 ## Запуск
 
@@ -39,6 +39,12 @@ Options:
   -o, --output <FILE>            Output file path (CSV)
       --format <FORMAT>          Output format: table or csv [default: table]
       --limit <N>                Number of payments to display [default: 24]
+      --yearly                   Show yearly summary instead of monthly table
+      --prepayment <PREP>        Prepayment "YYYY-MM-DD:amount:effect" (repeatable)
+      --save <FILE>              Save session to JSON file
+      --load <FILE>              Load session from JSON file
+      --sensitivity <DELTAS>     Rate sensitivity deltas (e.g. "-2,-1,0,1,2")
+      --break-even-rent <RENT>   Break-even analysis vs monthly rent
   -h, --help                     Print help
 ```
 
@@ -57,6 +63,42 @@ cargo run -p mortgage_cli -- -a 150000 -t 15 --rate-mode euribor --euribor-tenor
 **Mixed (фикс → Euribor):**
 ```bash
 cargo run -p mortgage_cli -- -a 250000 -t 25 --rate-mode mixed --rate 3.0 --spread 1.0 --fix-years 5 --euribor-tenor 6m --euribor-spread 1.5
+```
+
+**С датой начала:**
+```bash
+cargo run -p mortgage_cli -- -a 100000 -t 10 -r 5 --start-date 2025-01-01
+```
+
+**Годовая сводка:**
+```bash
+cargo run -p mortgage_cli -- -a 100000 -t 10 -r 5 --yearly
+```
+
+**С досрочным погашением:**
+```bash
+cargo run -p mortgage_cli -- -a 100000 -t 10 -r 5 \
+  --prepayment "2027-01-01:20000:ReduceTerm" \
+  --prepayment "2028-06-01:10000:ReducePayment"
+```
+
+**Анализ чувствительности:**
+```bash
+cargo run -p mortgage_cli -- -a 200000 -t 20 -r 4.5 --sensitivity "-2,-1,-0.5,0,0.5,1,2"
+```
+
+**Break-even vs аренда:**
+```bash
+cargo run -p mortgage_cli -- -a 200000 -t 20 -r 4.5 --break-even-rent 1000
+```
+
+**Сохранение/загрузка сессии:**
+```bash
+# Сохранить
+cargo run -p mortgage_cli -- -a 100000 -t 10 -r 5 --save session.json
+
+# Загрузить
+cargo run -p mortgage_cli -- --load session.json
 ```
 
 ### CSV-экспорт
@@ -93,7 +135,8 @@ cargo run -p mortgage_cli -- -a 100000 -t 10 -r 5 --format csv
     { "date_from": "2027-01-01", "rate": 3.0 }
   ],
   "prepayments": [
-    { "date": "2028-01-01", "amount": 50000, "effect": "ReduceTerm" }
+    { "date": "2028-01-01", "amount": 50000, "effect": "ReduceTerm" },
+    { "date": "2029-06-01", "amount": 20000, "effect": "ReducePayment" }
   ]
 }
 ```
@@ -115,7 +158,7 @@ cargo run -p mortgage_cli -- --config config.json
 | `rate_mode` | Fix / Euribor / Mixed | Режим ставки |
 | `same_spread` | bool | Одинаковый спред на весь срок |
 | `euribor_curve` | `Vec<EuriborPoint>` | Ручная кривая Euribor |
-| `prepayments` | `Vec<Prepayment>` | Досрочные погашения |
+| `prepayments` | `Vec<Prepayment>` | Досрочные погашения (множественные) |
 
 ## Сборка
 
@@ -124,3 +167,21 @@ cargo build --release -p mortgage_cli
 ```
 
 Бинарник: `target/release/mortgage_cli`
+
+## Тесты
+
+```bash
+cargo test -p mortgage_cli
+```
+
+10 интеграционных тестов покрывают:
+- Базовый расчёт
+- Diff платежи
+- CSV вывод
+- CSV файл
+- JSON конфиг
+- Годовая сводка
+- Mixed режим
+- Limit опция
+- Валюта USD
+- Невалидный конфиг
