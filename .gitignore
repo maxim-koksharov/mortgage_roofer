@@ -18,3 +18,4 @@ target/
 .env
 .cargo*
 ARCHITECTURE.md
+Cargo.lock
