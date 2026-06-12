@@ -1,11 +1,13 @@
 use chrono::NaiveDate;
 use mortgage_core::Calculator;
+use mortgage_core::euribor::EuriborCache;
 use mortgage_core::models::*;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Screen {
     Form,
     Results,
+    Help,
     Popup(String),
 }
 
@@ -21,6 +23,10 @@ pub enum Field {
     FixSpread,
     EuriborTenor,
     EuriborSpread,
+    EuriborFetchButton,
+    EuriborDate,
+    EuriborRate,
+    AddEuriborPoint,
     MixedFixYears,
     MixedFixRate,
     MixedFixSpread,
@@ -58,6 +64,11 @@ pub struct App {
     pub prepayment_amount: String,
     pub prepayment_effect: usize,
     pub prepayments: Vec<Prepayment>,
+
+    pub euribor_cache: EuriborCache,
+    pub euribor_curve: Vec<EuriborPoint>,
+    pub euribor_date: String,
+    pub euribor_rate: String,
 
     pub result: Option<LoanResult>,
     pub params: Option<LoanParams>,
@@ -102,6 +113,13 @@ impl App {
             prepayment_amount: "20000".to_string(),
             prepayment_effect: 0,
             prepayments: vec![],
+            euribor_cache: EuriborCache::new(),
+            euribor_curve: vec![],
+            euribor_date: chrono::Local::now()
+                .date_naive()
+                .format("%Y-%m-%d")
+                .to_string(),
+            euribor_rate: "3.0".to_string(),
             result: None,
             params: None,
             scroll_offset: 0,
@@ -130,6 +148,10 @@ impl App {
             1 => {
                 f.push(Field::EuriborTenor);
                 f.push(Field::EuriborSpread);
+                f.push(Field::EuriborFetchButton);
+                f.push(Field::EuriborDate);
+                f.push(Field::EuriborRate);
+                f.push(Field::AddEuriborPoint);
             }
             2 => {
                 f.push(Field::MixedFixYears);
@@ -138,6 +160,10 @@ impl App {
                 f.push(Field::MixedEuriborTenor);
                 f.push(Field::MixedEuriborSpread);
                 f.push(Field::SameSpread);
+                f.push(Field::EuriborFetchButton);
+                f.push(Field::EuriborDate);
+                f.push(Field::EuriborRate);
+                f.push(Field::AddEuriborPoint);
             }
             _ => {}
         }
@@ -159,6 +185,8 @@ impl App {
             Field::FixRate => self.fix_rate.push(c),
             Field::FixSpread => self.fix_spread.push(c),
             Field::EuriborSpread => self.euribor_spread.push(c),
+            Field::EuriborDate => self.euribor_date.push(c),
+            Field::EuriborRate => self.euribor_rate.push(c),
             Field::MixedFixYears => self.mixed_fix_years.push(c),
             Field::MixedFixRate => self.mixed_fix_rate.push(c),
             Field::MixedFixSpread => self.mixed_fix_spread.push(c),
@@ -188,6 +216,12 @@ impl App {
             }
             Field::EuriborSpread => {
                 self.euribor_spread.pop();
+            }
+            Field::EuriborDate => {
+                self.euribor_date.pop();
+            }
+            Field::EuriborRate => {
+                self.euribor_rate.pop();
             }
             Field::MixedFixYears => {
                 self.mixed_fix_years.pop();
@@ -243,6 +277,56 @@ impl App {
             }
             _ => {}
         }
+    }
+
+    pub fn fetch_euribor(&mut self) -> Result<(), String> {
+        let tenor = if self.rate_mode == 2 {
+            tenor_from_idx(self.mixed_euribor_tenor)
+        } else {
+            tenor_from_idx(self.euribor_tenor)
+        };
+
+        match self.euribor_cache.get_or_fetch(tenor) {
+            Ok(rate) => {
+                let start_date = NaiveDate::parse_from_str(&self.start_date, "%Y-%m-%d")
+                    .unwrap_or_else(|_| chrono::Local::now().date_naive());
+
+                let fix_end = if self.rate_mode == 2 {
+                    let fix_years = self.mixed_fix_years.parse::<f64>().unwrap_or(2.0);
+                    start_date + chrono::Duration::days((fix_years * 365.25) as i64)
+                } else {
+                    start_date
+                };
+
+                self.euribor_curve.push(EuriborPoint {
+                    date_from: fix_end,
+                    rate,
+                });
+                self.euribor_curve.sort_by_key(|p| p.date_from);
+                self.popup_msg = Some(format!("Fetched Euribor {}: {:.3}%", tenor, rate));
+                Ok(())
+            }
+            Err(e) => Err(format!("Euribor fetch failed: {}", e)),
+        }
+    }
+
+    pub fn add_euribor_point(&mut self) -> Result<(), String> {
+        let date = NaiveDate::parse_from_str(&self.euribor_date, "%Y-%m-%d")
+            .map_err(|_| "Invalid date (YYYY-MM-DD)")?;
+        let rate = self
+            .euribor_rate
+            .parse::<f64>()
+            .map_err(|_| "Invalid rate")?;
+        if !(0.0..=100.0).contains(&rate) {
+            return Err("Rate must be 0-100%".to_string());
+        }
+        self.euribor_curve.push(EuriborPoint {
+            date_from: date,
+            rate,
+        });
+        self.euribor_curve.sort_by_key(|p| p.date_from);
+        self.euribor_rate = "3.0".to_string();
+        Ok(())
     }
 
     pub fn calculate(&mut self) -> Result<(), String> {
@@ -306,6 +390,37 @@ impl App {
             _ => return Err("Unknown rate mode".to_string()),
         };
 
+        let euribor_curve = if (self.rate_mode == 1 || self.rate_mode == 2)
+            && self.euribor_curve.is_empty()
+        {
+            let tenor = if self.rate_mode == 2 {
+                tenor_from_idx(self.mixed_euribor_tenor)
+            } else {
+                tenor_from_idx(self.euribor_tenor)
+            };
+            match self.euribor_cache.get_or_fetch(tenor) {
+                Ok(rate) => {
+                    let fix_end = if self.rate_mode == 2 {
+                        let fix_years = self.mixed_fix_years.parse::<f64>().unwrap_or(2.0);
+                        start_date + chrono::Duration::days((fix_years * 365.25) as i64)
+                    } else {
+                        start_date
+                    };
+                    self.popup_msg = Some(format!("Auto-fetched Euribor {}: {:.3}%", tenor, rate));
+                    vec![EuriborPoint {
+                        date_from: fix_end,
+                        rate,
+                    }]
+                }
+                Err(_) => {
+                    self.popup_msg = Some("Euribor fetch failed. Using empty curve.".to_string());
+                    vec![]
+                }
+            }
+        } else {
+            self.euribor_curve.clone()
+        };
+
         let params = LoanParams {
             amount,
             term_years,
@@ -314,7 +429,7 @@ impl App {
             start_date,
             rate_mode,
             same_spread: self.same_spread,
-            euribor_curve: vec![],
+            euribor_curve,
             prepayments: self.prepayments.clone(),
         };
 

@@ -16,6 +16,7 @@ impl App {
                 match self.screen {
                     Screen::Form => self.handle_form(key.code),
                     Screen::Results => self.handle_results(key.code),
+                    Screen::Help => self.handle_help(key.code),
                     Screen::Popup(_) => {
                         self.popup_msg = None;
                         self.screen = Screen::Form;
@@ -50,7 +51,20 @@ impl App {
             KeyCode::Left => self.cycle_enum(-1),
             KeyCode::Right => self.cycle_enum(1),
             KeyCode::Enter => {
-                if self.fields[self.selected] == Field::AddPrepayment {
+                if self.fields[self.selected] == Field::EuriborFetchButton {
+                    if let Err(e) = self.fetch_euribor() {
+                        self.popup_msg = Some(format!("Error: {}", e));
+                        self.screen = Screen::Popup(self.popup_msg.clone().unwrap());
+                    } else {
+                        self.popup_msg = self.popup_msg.clone();
+                        self.screen = Screen::Popup(self.popup_msg.clone().unwrap_or_default());
+                    }
+                } else if self.fields[self.selected] == Field::AddEuriborPoint {
+                    if let Err(e) = self.add_euribor_point() {
+                        self.popup_msg = Some(format!("Error: {}", e));
+                        self.screen = Screen::Popup(self.popup_msg.clone().unwrap());
+                    }
+                } else if self.fields[self.selected] == Field::AddPrepayment {
                     if let Err(e) = self.add_prepayment() {
                         self.popup_msg = Some(format!("Error: {}", e));
                         self.screen = Screen::Popup(self.popup_msg.clone().unwrap());
@@ -63,9 +77,14 @@ impl App {
                 }
             }
             KeyCode::Delete => {
-                if !self.prepayments.is_empty() {
+                if !self.euribor_curve.is_empty() {
+                    self.euribor_curve.pop();
+                } else if !self.prepayments.is_empty() {
                     self.prepayments.pop();
                 }
+            }
+            KeyCode::Char('h') | KeyCode::Char('H') => {
+                self.screen = Screen::Help;
             }
             KeyCode::Esc | KeyCode::Char('q') if self.result.is_some() => {}
             _ => {}
@@ -120,6 +139,22 @@ impl App {
             }
             KeyCode::Up | KeyCode::PageUp if self.scroll_offset > 0 => {
                 self.scroll_offset -= 1;
+            }
+            KeyCode::Char('h') | KeyCode::Char('H') => {
+                self.screen = Screen::Help;
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_help(&mut self, code: KeyCode) {
+        match code {
+            KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('h') | KeyCode::Char('H') => {
+                if self.result.is_some() {
+                    self.screen = Screen::Results;
+                } else {
+                    self.screen = Screen::Form;
+                }
             }
             _ => {}
         }
