@@ -75,6 +75,7 @@
 			"rm -f ": "ask",
 			"rm -i ": "ask",
 			"rm -d ": "ask",
+			"rm -rf *": "deny",
 			"make": "allow",
 			"make *": "allow",
 			"sudo ": "deny",
