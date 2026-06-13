@@ -56,6 +56,10 @@ cargo run -p mortgage_tui
 - Prepayment effect — ReduceTerm / ReducePayment
 - Add prepayment — Enter для добавления, Delete для удаления последнего
 
+**Break-even upfront costs:**
+- Upfront cost — фиксированная сумма (0 = не используется)
+- Upfront percent — процент от суммы кредита (0 = не используется)
+
 ### Результаты
 
 После нажатия `Enter` отображается экран результатов:
@@ -76,7 +80,7 @@ cargo run -p mortgage_tui
 
 | Клавиша | Действие |
 |---------|----------|
-| `Esc` / `q` | Вернуться к форме / закрыть анализ |
+| `Esc` / `q` | Вернуться к форме / закрыть анализ (в форме — выход) |
 | `S` | Экспортировать таблицу в CSV (`/tmp/mortgage_tui_export.csv`) |
 | `Y` | Переключить годовую сводку |
 | `R` | Анализ чувствительности (±2%, ±1%, ±0.5%, 0%) |
@@ -109,6 +113,7 @@ cargo run -p mortgage_tui
 При нажатии `B` отображается:
 - Monthly rent — ежемесячная аренда (0.5% от суммы)
 - Monthly mortgage — ежемесячный платёж
+- Upfront costs — начальные затраты
 - Total interest — общие проценты
 - Break-even — через сколько месяцев покупка окупится
 

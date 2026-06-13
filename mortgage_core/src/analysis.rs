@@ -56,20 +56,31 @@ pub struct BreakEvenResult {
     pub break_even_months: Option<u32>,
     pub break_even_years: Option<f64>,
     pub total_interest: f64,
+    pub upfront_costs: f64,
     pub explanation: String,
 }
 
+fn upfront_costs(params: &LoanParams) -> f64 {
+    params
+        .upfront_cost
+        .unwrap_or_else(|| params.amount * params.upfront_percent.unwrap_or(0.0) / 100.0)
+}
+
 pub fn break_even_analysis(params: &LoanParams, monthly_rent: f64) -> BreakEvenResult {
-    let result = Calculator::calculate(params).unwrap_or(LoanResult {
-        monthly_payment: None,
-        total_principal: 0.0,
-        total_interest: 0.0,
-        total_paid: 0.0,
-        payments: vec![],
-        principal_exceeds_interest_at: None,
-    });
+    let Ok(result) = Calculator::calculate(params) else {
+        return BreakEvenResult {
+            monthly_rent,
+            monthly_cost: 0.0,
+            break_even_months: None,
+            break_even_years: None,
+            total_interest: 0.0,
+            upfront_costs: upfront_costs(params),
+            explanation: "Invalid loan parameters.".to_string(),
+        };
+    };
 
     let monthly_cost = result.monthly_payment.unwrap_or(0.0);
+    let upfront = upfront_costs(params);
 
     if monthly_cost >= monthly_rent {
         return BreakEvenResult {
@@ -78,6 +89,7 @@ pub fn break_even_analysis(params: &LoanParams, monthly_rent: f64) -> BreakEvenR
             break_even_months: None,
             break_even_years: None,
             total_interest: result.total_interest,
+            upfront_costs: upfront,
             explanation: format!(
                 "Monthly mortgage ({:.2}) >= rent ({:.2}). Buying costs more per month.",
                 monthly_cost, monthly_rent
@@ -87,7 +99,6 @@ pub fn break_even_analysis(params: &LoanParams, monthly_rent: f64) -> BreakEvenR
 
     let monthly_savings = monthly_rent - monthly_cost;
     let equity_buildup_per_month = result.payments.first().map(|p| p.principal).unwrap_or(0.0);
-
     let effective_monthly_benefit = monthly_savings + equity_buildup_per_month;
 
     if effective_monthly_benefit <= 0.0 {
@@ -97,12 +108,12 @@ pub fn break_even_analysis(params: &LoanParams, monthly_rent: f64) -> BreakEvenR
             break_even_months: None,
             break_even_years: None,
             total_interest: result.total_interest,
+            upfront_costs: upfront,
             explanation: "No positive monthly benefit found.".to_string(),
         };
     }
 
-    let upfront_costs = params.amount * 0.05;
-    let break_even_months = (upfront_costs / effective_monthly_benefit).ceil() as u32;
+    let break_even_months = (upfront / effective_monthly_benefit).ceil() as u32;
     let break_even_years = break_even_months as f64 / 12.0;
 
     BreakEvenResult {
@@ -111,9 +122,60 @@ pub fn break_even_analysis(params: &LoanParams, monthly_rent: f64) -> BreakEvenR
         break_even_months: Some(break_even_months),
         break_even_years: Some(break_even_years),
         total_interest: result.total_interest,
+        upfront_costs: upfront,
         explanation: format!(
-            "Monthly savings: {:.2}, equity buildup: {:.2}. Break-even in {} months ({:.1} years).",
-            monthly_savings, equity_buildup_per_month, break_even_months, break_even_years
+            "Upfront: {:.2}, monthly savings: {:.2}, equity buildup: {:.2}. Break-even in {} months ({:.1} years).",
+            upfront, monthly_savings, equity_buildup_per_month, break_even_months, break_even_years
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::NaiveDate;
+
+    fn default_params() -> LoanParams {
+        LoanParams {
+            amount: 100_000.0,
+            term_years: 10,
+            payment_type: PaymentType::Annuity,
+            currency: Currency::Eur,
+            start_date: NaiveDate::from_ymd_opt(2025, 1, 1).unwrap(),
+            rate_mode: RateMode::Fix {
+                rate: 5.0,
+                spread: 0.0,
+            },
+            same_spread: false,
+            euribor_curve: vec![],
+            prepayments: vec![],
+            upfront_cost: None,
+            upfront_percent: None,
+        }
+    }
+
+    #[test]
+    fn test_break_even_default_upfront_percent() {
+        let mut params = default_params();
+        params.upfront_percent = Some(5.0);
+        let be = break_even_analysis(&params, 1500.0);
+        assert!(be.break_even_months.is_some());
+        assert!((be.upfront_costs - 5_000.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_break_even_fixed_upfront_cost() {
+        let mut params = default_params();
+        params.upfront_cost = Some(10_000.0);
+        params.upfront_percent = Some(5.0);
+        let be = break_even_analysis(&params, 1500.0);
+        assert!((be.upfront_costs - 10_000.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_break_even_mortgage_higher_than_rent() {
+        let params = default_params();
+        let be = break_even_analysis(&params, 500.0);
+        assert!(be.break_even_months.is_none());
     }
 }

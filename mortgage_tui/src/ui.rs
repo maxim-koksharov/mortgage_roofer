@@ -17,6 +17,7 @@ impl App {
         match self.screen.clone() {
             Screen::Form => self.draw_form(frame),
             Screen::Results => self.draw_results(frame),
+            Screen::Help => self.draw_help(frame),
             Screen::Popup(_) => {
                 self.draw_results(frame);
                 if let Some(ref msg) = self.popup_msg {
@@ -87,6 +88,16 @@ impl App {
                     ("Euribor tenor", tenor_name(self.euribor_tenor).to_string())
                 }
                 Field::EuriborSpread => ("Euribor spread (%)", self.euribor_spread.clone()),
+                Field::EuriborFetchButton => {
+                    let count = self.euribor_curve.len();
+                    ("Euribor curve", format!("[Enter to fetch, {} pts]", count))
+                }
+                Field::EuriborDate => ("Euribor date", self.euribor_date.clone()),
+                Field::EuriborRate => ("Euribor rate (%)", self.euribor_rate.clone()),
+                Field::AddEuriborPoint => (
+                    "Add Euribor pt",
+                    "[Enter to add, Del=remove last]".to_string(),
+                ),
                 Field::MixedFixYears => ("Fixed years", self.mixed_fix_years.clone()),
                 Field::MixedFixRate => ("Mixed fix rate (%)", self.mixed_fix_rate.clone()),
                 Field::MixedFixSpread => ("Mixed fix spread (%)", self.mixed_fix_spread.clone()),
@@ -120,6 +131,8 @@ impl App {
                     let count = self.prepayments.len();
                     ("Add prepayment", format!("[Enter to add, {} saved]", count))
                 }
+                Field::UpfrontCost => ("Upfront cost", self.upfront_cost.clone()),
+                Field::UpfrontPercent => ("Upfront %", self.upfront_percent.clone()),
             };
 
             let hint = if is_sel {
@@ -132,7 +145,13 @@ impl App {
                     | Field::SameSpread
                     | Field::PrepaymentEffect => " [←→ toggle]",
                     Field::AddPrepayment => " [Enter=add, Del=remove last]",
+                    Field::EuriborFetchButton => " [Enter=fetch]",
+                    Field::EuriborDate => " [YYYY-MM-DD]",
+                    Field::EuriborRate => " [type rate]",
+                    Field::AddEuriborPoint => " [Enter=add, Del=remove last]",
                     Field::StartDate => " [YYYY-MM-DD]",
+                    Field::UpfrontCost => " [fixed amount or 0]",
+                    Field::UpfrontPercent => " [percent or 0]",
                     _ => " [type]",
                 }
             } else {
@@ -242,6 +261,7 @@ impl App {
                         let text = Text::from(vec![
                             Line::from(format!("Monthly rent:      {:.2}", be.monthly_rent)),
                             Line::from(format!("Monthly mortgage:  {:.2}", be.monthly_cost)),
+                            Line::from(format!("Upfront costs:     {:.2}", be.upfront_costs)),
                             Line::from(format!("Total interest:    {:.2}", be.total_interest)),
                             Line::from(""),
                             if let (Some(months), Some(years)) =
@@ -374,6 +394,136 @@ impl App {
                 );
             }
         }
+    }
+
+    fn draw_help(&self, frame: &mut Frame) {
+        let area = frame.area();
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(3), Constraint::Min(0)])
+            .split(area);
+
+        let header = Paragraph::new("Mortgage Calculator — Help")
+            .block(Block::default().borders(Borders::ALL))
+            .alignment(Alignment::Center);
+        frame.render_widget(header, chunks[0]);
+
+        let help_text = vec![
+            Line::from(""),
+            Line::from(Span::styled(
+                "=== Form Navigation ===",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("Tab / Down", Style::default().fg(Color::Cyan)),
+                Span::raw("          Next field"),
+            ]),
+            Line::from(vec![
+                Span::styled("Shift+Tab / Up", Style::default().fg(Color::Cyan)),
+                Span::raw("    Previous field"),
+            ]),
+            Line::from(vec![
+                Span::styled("Left / Right", Style::default().fg(Color::Cyan)),
+                Span::raw("        Toggle enum values (currency, payment type, etc.)"),
+            ]),
+            Line::from(vec![
+                Span::styled("0-9 . -", Style::default().fg(Color::Cyan)),
+                Span::raw("           Type numeric values"),
+            ]),
+            Line::from(vec![
+                Span::styled("Backspace", Style::default().fg(Color::Cyan)),
+                Span::raw("           Delete character"),
+            ]),
+            Line::from(vec![
+                Span::styled("Enter", Style::default().fg(Color::Cyan)),
+                Span::raw("               Calculate / Add prepayment / Fetch Euribor"),
+            ]),
+            Line::from(vec![
+                Span::styled("Delete", Style::default().fg(Color::Cyan)),
+                Span::raw("              Remove last Euribor point or prepayment"),
+            ]),
+            Line::from(vec![
+                Span::styled("q / Esc", Style::default().fg(Color::Cyan)),
+                Span::raw("             Quit"),
+            ]),
+            Line::from(vec![
+                Span::styled("h", Style::default().fg(Color::Cyan)),
+                Span::raw("                 Show this help page"),
+            ]),
+            Line::from(""),
+            Line::from(Span::styled(
+                "=== Results Screen ===",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("q / Esc", Style::default().fg(Color::Cyan)),
+                Span::raw("             Return to form / close analysis"),
+            ]),
+            Line::from(vec![
+                Span::styled("S", Style::default().fg(Color::Cyan)),
+                Span::raw("                 Export CSV to /tmp/mortgage_tui_export.csv"),
+            ]),
+            Line::from(vec![
+                Span::styled("Y", Style::default().fg(Color::Cyan)),
+                Span::raw("                 Toggle yearly summary view"),
+            ]),
+            Line::from(vec![
+                Span::styled("R", Style::default().fg(Color::Cyan)),
+                Span::raw("                 Show rate sensitivity analysis"),
+            ]),
+            Line::from(vec![
+                Span::styled("B", Style::default().fg(Color::Cyan)),
+                Span::raw("                 Show break-even vs rent analysis"),
+            ]),
+            Line::from(vec![
+                Span::styled("W", Style::default().fg(Color::Cyan)),
+                Span::raw("                 Save session to /tmp/mortgage_session.json"),
+            ]),
+            Line::from(vec![
+                Span::styled("L", Style::default().fg(Color::Cyan)),
+                Span::raw("                 Load session from /tmp/mortgage_session.json"),
+            ]),
+            Line::from(vec![
+                Span::styled("Up / Down", Style::default().fg(Color::Cyan)),
+                Span::raw("           Scroll table"),
+            ]),
+            Line::from(vec![
+                Span::styled("PgUp / PgDn", Style::default().fg(Color::Cyan)),
+                Span::raw("         Page scroll"),
+            ]),
+            Line::from(""),
+            Line::from(Span::styled(
+                "=== Help Screen ===",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("q / Esc / h", Style::default().fg(Color::Cyan)),
+                Span::raw("        Return to previous screen"),
+            ]),
+            Line::from(""),
+            Line::from(Span::styled(
+                "Press any key to return...",
+                Style::default().fg(Color::Gray),
+            )),
+        ];
+
+        let help = Paragraph::new(help_text)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Keyboard Shortcuts"),
+            )
+            .alignment(Alignment::Left);
+        frame.render_widget(help, chunks[1]);
     }
 
     fn draw_popup(&self, frame: &mut Frame, msg: &str) {

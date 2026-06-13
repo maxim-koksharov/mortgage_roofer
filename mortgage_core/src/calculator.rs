@@ -20,6 +20,8 @@ use chrono::{Months, NaiveDate};
 ///     same_spread: false,
 ///     euribor_curve: vec![],
 ///     prepayments: vec![],
+///     upfront_cost: None,
+///     upfront_percent: None,
 /// };
 ///
 /// let result = Calculator::calculate(&params).unwrap();
@@ -33,8 +35,7 @@ impl Calculator {
     ///
     /// Returns `Err` if validation fails (e.g., negative amount, zero term).
     pub fn calculate(params: &LoanParams) -> Result<LoanResult, MortgageError> {
-        let errors = params.validate();
-        if !errors.is_empty() {
+        if let Err(errors) = params.validate() {
             return Err(MortgageError::CalculationError(errors.join("; ")));
         }
 
@@ -45,190 +46,144 @@ impl Calculator {
         let mut total_principal = 0.0;
 
         let total_months = params.term_years * 12;
+        let mut remaining_months = total_months;
 
         let mut prepayments = params.prepayments.clone();
         prepayments.sort_by_key(|p| p.date);
 
-        let effective_rate = |date: NaiveDate| -> f64 { Self::annual_rate_for_date(date, params) };
+        let mut target_monthly: Option<f64> = None;
+        let mut target_principal: Option<f64> = None;
 
-        if params.payment_type == PaymentType::Annuity {
-            let mut remaining_months = total_months;
-            let mut target_monthly_payment: Option<f64> = None;
+        while balance > 0.01 && remaining_months > 0 {
+            Self::apply_prepayments(
+                &mut prepayments,
+                &mut balance,
+                &mut total_principal,
+                &mut target_monthly,
+                &mut target_principal,
+                &mut remaining_months,
+                current_date,
+            );
 
-            while balance > 0.01 && remaining_months > 0 {
-                while let Some(prep) = prepayments.first() {
-                    if prep.date == current_date {
-                        let prep = prepayments.remove(0);
-                        let prep_amount = prep.amount.min(balance);
-                        balance -= prep_amount;
-                        total_principal += prep_amount;
+            let rate = Self::annual_rate_for_date(current_date, params);
+            let monthly_rate = rate / 12.0 / 100.0;
 
-                        match prep.effect {
-                            PrepaymentEffect::ReduceTerm => {}
-                            PrepaymentEffect::ReducePayment => {
-                                target_monthly_payment = None;
-                            }
-                        }
-                    } else {
-                        break;
-                    }
+            let interest = balance * monthly_rate;
+            let (principal, payment) = match params.payment_type {
+                PaymentType::Annuity => {
+                    let monthly = target_monthly.get_or_insert_with(|| {
+                        Self::annuity_payment(balance, monthly_rate, remaining_months)
+                    });
+                    let principal = (*monthly - interest).min(balance);
+                    let payment = principal + interest;
+                    (principal, payment)
                 }
-
-                let rate = effective_rate(current_date);
-                let monthly_rate = rate / 12.0 / 100.0;
-
-                let monthly_payment = match target_monthly_payment {
-                    Some(mp) => mp,
-                    None => {
-                        let mp = if monthly_rate > 0.0 {
-                            let num =
-                                monthly_rate * (1.0 + monthly_rate).powi(remaining_months as i32);
-                            let den = (1.0 + monthly_rate).powi(remaining_months as i32) - 1.0;
-                            balance * num / den
-                        } else {
-                            balance / remaining_months as f64
-                        };
-                        target_monthly_payment = Some(mp);
-                        mp
-                    }
-                };
-
-                let interest = balance * monthly_rate;
-                let principal = (monthly_payment - interest).min(balance);
-                let actual_payment = principal + interest;
-
-                balance -= principal;
-                total_interest += interest;
-                total_principal += principal;
-
-                payments.push(Payment {
-                    payment: actual_payment,
-                    date: current_date,
-                    principal,
-                    interest,
-                    remaining_balance: balance.max(0.0),
-                    applied_rate: rate,
-                });
-
-                current_date = current_date
-                    .checked_add_months(Months::new(1))
-                    .ok_or_else(|| MortgageError::InvalidDate("Date overflow".to_string()))?;
-                remaining_months -= 1;
-            }
-
-            let first_principal_gt_interest =
-                payments.iter().position(|p| p.principal > p.interest);
-
-            let fixed_monthly = if payments.is_empty() {
-                None
-            } else {
-                let initial_rate = effective_rate(params.start_date);
-                let mr = initial_rate / 12.0 / 100.0;
-                if mr > 0.0 {
-                    let n = total_months as i32;
-                    let num = mr * (1.0 + mr).powi(n);
-                    let den = (1.0 + mr).powi(n) - 1.0;
-                    Some(params.amount * num / den)
-                } else {
-                    Some(params.amount / total_months as f64)
+                PaymentType::Diff => {
+                    let principal = target_principal
+                        .get_or_insert_with(|| balance / remaining_months as f64)
+                        .min(balance);
+                    let payment = principal + interest;
+                    (principal, payment)
                 }
             };
 
-            Ok(LoanResult {
-                monthly_payment: fixed_monthly,
-                total_principal,
-                total_interest,
-                total_paid: total_principal + total_interest,
-                payments,
-                principal_exceeds_interest_at: first_principal_gt_interest,
-            })
+            balance -= principal;
+            total_interest += interest;
+            total_principal += principal;
+
+            payments.push(Payment {
+                payment,
+                date: current_date,
+                principal,
+                interest,
+                remaining_balance: balance.max(0.0),
+                applied_rate: rate,
+            });
+
+            current_date = current_date
+                .checked_add_months(Months::new(1))
+                .ok_or_else(|| MortgageError::InvalidDate("Date overflow".to_string()))?;
+            remaining_months -= 1;
+        }
+
+        let principal_exceeds_interest_at = payments.iter().position(|p| p.principal > p.interest);
+
+        let monthly_payment = match params.payment_type {
+            PaymentType::Annuity if !payments.is_empty() => Some(Self::annuity_payment(
+                params.amount,
+                Self::monthly_rate(params, params.start_date),
+                total_months,
+            )),
+            _ => None,
+        };
+
+        Ok(LoanResult {
+            monthly_payment,
+            total_principal,
+            total_interest,
+            total_paid: total_principal + total_interest,
+            payments,
+            principal_exceeds_interest_at,
+        })
+    }
+
+    fn annuity_payment(balance: f64, monthly_rate: f64, months: u32) -> f64 {
+        if monthly_rate > 0.0 {
+            let n = months as i32;
+            let num = monthly_rate * (1.0 + monthly_rate).powi(n);
+            let den = (1.0 + monthly_rate).powi(n) - 1.0;
+            balance * num / den
         } else {
-            let mut remaining_months = total_months;
-            let mut target_principal: Option<f64> = None;
+            balance / months as f64
+        }
+    }
 
-            while balance > 0.01 && remaining_months > 0 {
-                while let Some(prep) = prepayments.first() {
-                    if prep.date == current_date {
-                        let prep = prepayments.remove(0);
-                        let prep_amount = prep.amount.min(balance);
-                        balance -= prep_amount;
-                        total_principal += prep_amount;
+    fn monthly_rate(params: &LoanParams, date: NaiveDate) -> f64 {
+        Self::annual_rate_for_date(date, params) / 12.0 / 100.0
+    }
 
-                        match prep.effect {
-                            PrepaymentEffect::ReduceTerm => {
-                                if let Some(tp) = target_principal {
-                                    remaining_months = ((balance / tp).ceil() as u32).max(1);
-                                }
-                            }
-                            PrepaymentEffect::ReducePayment => {
-                                target_principal = None;
-                            }
-                        }
-                    } else {
-                        break;
+    fn apply_prepayments(
+        prepayments: &mut Vec<Prepayment>,
+        balance: &mut f64,
+        total_principal: &mut f64,
+        target_monthly: &mut Option<f64>,
+        target_principal: &mut Option<f64>,
+        remaining_months: &mut u32,
+        current_date: NaiveDate,
+    ) {
+        while let Some(prep) = prepayments.first() {
+            if prep.date != current_date {
+                break;
+            }
+            let prep = prepayments.remove(0);
+            let prep_amount = prep.amount.min(*balance);
+            *balance -= prep_amount;
+            *total_principal += prep_amount;
+
+            match prep.effect {
+                PrepaymentEffect::ReduceTerm => {
+                    if let Some(tp) = target_principal {
+                        *remaining_months = ((*balance / *tp).ceil() as u32).max(1);
                     }
                 }
-
-                let rate = effective_rate(current_date);
-                let monthly_rate = rate / 12.0 / 100.0;
-
-                let principal_part = match target_principal {
-                    Some(tp) => tp.min(balance),
-                    None => {
-                        let tp = balance / remaining_months as f64;
-                        target_principal = Some(tp);
-                        tp.min(balance)
-                    }
-                };
-                let interest = balance * monthly_rate;
-                let payment = principal_part + interest;
-
-                balance -= principal_part;
-                total_interest += interest;
-                total_principal += principal_part;
-
-                payments.push(Payment {
-                    payment,
-                    date: current_date,
-                    principal: principal_part,
-                    interest,
-                    remaining_balance: balance.max(0.0),
-                    applied_rate: rate,
-                });
-
-                current_date = current_date
-                    .checked_add_months(Months::new(1))
-                    .ok_or_else(|| MortgageError::InvalidDate("Date overflow".to_string()))?;
-                remaining_months -= 1;
+                PrepaymentEffect::ReducePayment => {
+                    *target_monthly = None;
+                    *target_principal = None;
+                }
             }
-
-            let first_principal_gt_interest =
-                payments.iter().position(|p| p.principal > p.interest);
-
-            Ok(LoanResult {
-                monthly_payment: None,
-                total_principal,
-                total_interest,
-                total_paid: total_principal + total_interest,
-                payments,
-                principal_exceeds_interest_at: first_principal_gt_interest,
-            })
         }
     }
 
     fn annual_rate_for_date(date: NaiveDate, params: &LoanParams) -> f64 {
         match &params.rate_mode {
             RateMode::Fix { rate, spread } => rate + spread,
-            RateMode::Euribor { tenor: _, spread } => {
-                let euribor = Self::euribor_for_date(date, params);
-                euribor + spread
-            }
+            RateMode::Euribor { spread, .. } => Self::euribor_for_date(date, params) + spread,
             RateMode::Mixed {
                 fix_years,
                 fix_rate,
                 fix_spread,
-                euribor_tenor: _,
                 euribor_spread,
+                ..
             } => {
                 let fix_end = params
                     .start_date
@@ -237,13 +192,12 @@ impl Calculator {
                 if date < fix_end {
                     fix_rate + fix_spread
                 } else {
-                    let euribor = Self::euribor_for_date(date, params);
                     let spread = if params.same_spread {
                         *fix_spread
                     } else {
                         *euribor_spread
                     };
-                    euribor + spread
+                    Self::euribor_for_date(date, params) + spread
                 }
             }
         }
@@ -252,20 +206,13 @@ impl Calculator {
     /// Look up Euribor rate for a date.
     /// First check the manual curve, then fall back to auto-fetched (stub for now).
     fn euribor_for_date(date: NaiveDate, params: &LoanParams) -> f64 {
-        // Search manual curve for the latest point before or on this date.
-        let mut applicable: Option<f64> = None;
-        for point in &params.euribor_curve {
-            if point.date_from <= date {
-                applicable = Some(point.rate);
-            }
-        }
-        if let Some(rate) = applicable {
-            return rate;
-        }
-
-        // Fallback: stub — will be replaced by fetched ECB data.
-        // For now, return 0.0 so the caller can see data is missing.
-        0.0
+        params
+            .euribor_curve
+            .iter()
+            .filter(|p| p.date_from <= date)
+            .map(|p| p.rate)
+            .next_back()
+            .unwrap_or(0.0)
     }
 }
 
@@ -288,6 +235,8 @@ mod tests {
             same_spread: false,
             euribor_curve: vec![],
             prepayments: vec![],
+            upfront_cost: None,
+            upfront_percent: None,
         }
     }
 

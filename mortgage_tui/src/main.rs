@@ -7,7 +7,7 @@ use ratatui::DefaultTerminal;
 
 impl App {
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> std::io::Result<()> {
-        loop {
+        while !self.should_exit {
             terminal.draw(|frame| self.draw(frame))?;
 
             if let Event::Key(key) = event::read()?
@@ -16,29 +16,23 @@ impl App {
                 match self.screen {
                     Screen::Form => self.handle_form(key.code),
                     Screen::Results => self.handle_results(key.code),
+                    Screen::Help => self.handle_help(key.code),
                     Screen::Popup(_) => {
                         self.popup_msg = None;
                         self.screen = Screen::Form;
                     }
                 }
             }
-
-            if self.screen == Screen::Form && self.result.is_some() && self.popup_msg.is_none() {}
         }
+        Ok(())
     }
 
     fn handle_form(&mut self, code: KeyCode) {
         match code {
-            KeyCode::Tab => {
+            KeyCode::Tab | KeyCode::Down => {
                 self.selected = (self.selected + 1) % self.fields.len();
             }
-            KeyCode::BackTab => {
-                self.selected = (self.selected + self.fields.len() - 1) % self.fields.len();
-            }
-            KeyCode::Down => {
-                self.selected = (self.selected + 1) % self.fields.len();
-            }
-            KeyCode::Up => {
+            KeyCode::BackTab | KeyCode::Up => {
                 self.selected = (self.selected + self.fields.len() - 1) % self.fields.len();
             }
             KeyCode::Char(c) if c.is_numeric() || c == '.' || c == '-' => {
@@ -50,31 +44,44 @@ impl App {
             KeyCode::Left => self.cycle_enum(-1),
             KeyCode::Right => self.cycle_enum(1),
             KeyCode::Enter => {
-                if self.fields[self.selected] == Field::AddPrepayment {
-                    if let Err(e) = self.add_prepayment() {
-                        self.popup_msg = Some(format!("Error: {}", e));
-                        self.screen = Screen::Popup(self.popup_msg.clone().unwrap());
-                    }
-                } else if let Err(e) = self.calculate() {
+                if let Err(e) = self.handle_enter() {
                     self.popup_msg = Some(format!("Error: {}", e));
                     self.screen = Screen::Popup(self.popup_msg.clone().unwrap());
-                } else {
-                    self.screen = Screen::Results;
                 }
             }
             KeyCode::Delete => {
-                if !self.prepayments.is_empty() {
+                if !self.euribor_curve.is_empty() {
+                    self.euribor_curve.pop();
+                } else if !self.prepayments.is_empty() {
                     self.prepayments.pop();
                 }
             }
-            KeyCode::Esc | KeyCode::Char('q') if self.result.is_some() => {}
+            KeyCode::Char('h') | KeyCode::Char('H') => {
+                self.screen = Screen::Help;
+            }
+            KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
+                self.should_exit = true;
+            }
             _ => {}
+        }
+    }
+
+    fn handle_enter(&mut self) -> Result<(), String> {
+        match self.fields[self.selected] {
+            Field::EuriborFetchButton => self.fetch_euribor(),
+            Field::AddEuriborPoint => self.add_euribor_point(),
+            Field::AddPrepayment => self.add_prepayment(),
+            _ => {
+                self.calculate()?;
+                self.screen = Screen::Results;
+                Ok(())
+            }
         }
     }
 
     fn handle_results(&mut self, code: KeyCode) {
         match code {
-            KeyCode::Esc | KeyCode::Char('q') => {
+            KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
                 if self.show_analysis.is_some() {
                     self.show_analysis = None;
                 } else {
@@ -120,6 +127,26 @@ impl App {
             }
             KeyCode::Up | KeyCode::PageUp if self.scroll_offset > 0 => {
                 self.scroll_offset -= 1;
+            }
+            KeyCode::Char('h') | KeyCode::Char('H') => {
+                self.screen = Screen::Help;
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_help(&mut self, code: KeyCode) {
+        match code {
+            KeyCode::Esc
+            | KeyCode::Char('q')
+            | KeyCode::Char('Q')
+            | KeyCode::Char('h')
+            | KeyCode::Char('H') => {
+                if self.result.is_some() {
+                    self.screen = Screen::Results;
+                } else {
+                    self.screen = Screen::Form;
+                }
             }
             _ => {}
         }

@@ -50,10 +50,6 @@ pub struct EuriborCache {
 }
 
 impl EuriborCache {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     /// Get rate, fetching if necessary. Caches for the current calendar day.
     pub fn get_or_fetch(&mut self, tenor: EuriborTenor) -> Result<f64, MortgageError> {
         let today = chrono::Local::now().date_naive();

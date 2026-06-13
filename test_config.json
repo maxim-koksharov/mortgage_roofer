@@ -19,5 +19,7 @@
   ],
   "prepayments": [
     { "date": "2028-01-01", "amount": 50000, "effect": "ReduceTerm" }
-  ]
+  ],
+  "upfront_cost": null,
+  "upfront_percent": null
 }

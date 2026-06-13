@@ -45,6 +45,10 @@ cargo run -p mortgage_gui
 - Кнопка "+ Add Prepayment" — добавляет в список
 - Список prepayments с кнопками "X" для удаления
 
+**Break-even upfront costs:**
+- Upfront cost — фиксированная сумма (0 = не используется)
+- Upfront percent — процент от суммы кредита (0 = не используется)
+
 ### Кнопки действий
 
 - **Calculate** — расчёт графика платежей
@@ -96,6 +100,7 @@ cargo run -p mortgage_gui
 Вкладка **Break-Even** показывает:
 - Monthly rent (с полем ввода)
 - Monthly mortgage
+- Upfront costs
 - Total interest
 - Break-even (месяцы и годы)
 - Explanation

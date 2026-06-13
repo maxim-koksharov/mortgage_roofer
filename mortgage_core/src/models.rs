@@ -188,10 +188,14 @@ pub struct LoanParams {
     pub euribor_curve: Vec<EuriborPoint>,
     /// Optional prepayments.
     pub prepayments: Vec<Prepayment>,
+    /// Optional fixed upfront costs (overrides upfront_percent).
+    pub upfront_cost: Option<f64>,
+    /// Optional upfront costs as percent of loan amount.
+    pub upfront_percent: Option<f64>,
 }
 
 impl LoanParams {
-    pub fn validate(&self) -> Vec<String> {
+    pub fn validate(&self) -> Result<(), Vec<String>> {
         let mut errors = Vec::new();
 
         if self.amount <= 0.0 {
@@ -260,7 +264,25 @@ impl LoanParams {
             }
         }
 
-        errors
+        if self.upfront_cost.is_some() && self.upfront_percent.is_some() {
+            errors.push("Specify upfront_cost or upfront_percent, not both".to_string());
+        }
+        if let Some(cost) = self.upfront_cost
+            && cost < 0.0
+        {
+            errors.push("Upfront cost cannot be negative".to_string());
+        }
+        if let Some(percent) = self.upfront_percent
+            && !(0.0..=100.0).contains(&percent)
+        {
+            errors.push("Upfront percent must be between 0 and 100".to_string());
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
     }
 }
 

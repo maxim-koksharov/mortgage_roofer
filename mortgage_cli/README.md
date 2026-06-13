@@ -35,6 +35,8 @@ Options:
       --euribor-tenor <TENOR>    Euribor tenor: 1m, 3m, 6m, 12m
       --euribor-spread <SPREAD>  Euribor spread
       --same-spread              Use same spread for fixed and euribor periods
+      --upfront-cost <AMOUNT>    Upfront costs for break-even (fixed amount)
+      --upfront-percent <PERCENT>  Upfront costs for break-even (percent of loan)
   -c, --config <FILE>            Path to JSON config file
   -o, --output <FILE>            Output file path (CSV)
       --format <FORMAT>          Output format: table or csv [default: table]
@@ -89,7 +91,7 @@ cargo run -p mortgage_cli -- -a 200000 -t 20 -r 4.5 --sensitivity "-2,-1,-0.5,0,
 
 **Break-even vs аренда:**
 ```bash
-cargo run -p mortgage_cli -- -a 200000 -t 20 -r 4.5 --break-even-rent 1000
+cargo run -p mortgage_cli -- -a 200000 -t 20 -r 4.5 --break-even-rent 1000 --upfront-percent 5
 ```
 
 **Сохранение/загрузка сессии:**
@@ -137,7 +139,9 @@ cargo run -p mortgage_cli -- -a 100000 -t 10 -r 5 --format csv
   "prepayments": [
     { "date": "2028-01-01", "amount": 50000, "effect": "ReduceTerm" },
     { "date": "2029-06-01", "amount": 20000, "effect": "ReducePayment" }
-  ]
+  ],
+  "upfront_cost": null,
+  "upfront_percent": null
 }
 ```
 
@@ -159,6 +163,8 @@ cargo run -p mortgage_cli -- --config config.json
 | `same_spread` | bool | Одинаковый спред на весь срок |
 | `euribor_curve` | `Vec<EuriborPoint>` | Ручная кривая Euribor |
 | `prepayments` | `Vec<Prepayment>` | Досрочные погашения (множественные) |
+| `upfront_cost` | `Option<f64>` | Фиксированные upfront costs для break-even |
+| `upfront_percent` | `Option<f64>` | Upfront costs как % от суммы кредита |
 
 ## Сборка
 
