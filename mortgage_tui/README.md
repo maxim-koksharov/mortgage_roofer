@@ -1,38 +1,40 @@
 # mortgage_tui
 
-Терминальный интерфейс для ипотечного калькулятора на `ratatui` + `crossterm`.
+[Русская версия](README.ru.md)
 
-## Запуск
+Terminal UI for the mortgage calculator built with `ratatui` + `crossterm`.
+
+## Running
 
 ```bash
 cargo run -p mortgage_tui
 ```
 
-## Навигация
+## Navigation
 
-### Форма ввода
+### Input Form
 
-| Клавиша | Действие |
-|---------|----------|
-| `Tab` / `↓` | Следующее поле |
-| `Shift+Tab` / `↑` | Предыдущее поле |
-| `←` / `→` | Переключение enum (валюта, тип платежа, режим ставки и т.д.) |
-| Цифры / `.` / `-` | Ввод числовых значений и дат |
-| `Backspace` | Удаление символа |
-| `Enter` | Расчёт / Добавить prepayment (на поле AddPrepayment) |
-| `Delete` | Удалить последний prepayment |
-| `Esc` / `q` | Выход |
+| Key | Action |
+|-----|--------|
+| `Tab` / `↓` | Next field |
+| `Shift+Tab` / `↑` | Previous field |
+| `←` / `→` | Toggle enum values (currency, payment type, rate mode, etc.) |
+| Digits / `.` / `-` | Enter numeric values and dates |
+| `Backspace` | Delete character |
+| `Enter` | Calculate / Add prepayment (on AddPrepayment field) |
+| `Delete` | Remove last prepayment |
+| `Esc` / `q` | Quit |
 
-### Поля формы
+### Form Fields
 
-1. **Amount** — сумма кредита
-2. **Term (yrs)** — срок в годах
-3. **Start date** — дата начала (YYYY-MM-DD)
-4. **Currency** — EUR / USD (переключение ←→)
-5. **Payment type** — Annuity / Diff (переключение ←→)
-6. **Rate mode** — Fix / Euribor / Mixed (переключение ←→)
+1. **Amount** — loan amount
+2. **Term (yrs)** — term in years
+3. **Start date** — start date (YYYY-MM-DD)
+4. **Currency** — EUR / USD (toggle ←→)
+5. **Payment type** — Annuity / Diff (toggle ←→)
+6. **Rate mode** — Fix / Euribor / Mixed (toggle ←→)
 
-При выборе режима ставки динамически появляются соответствующие поля:
+Depending on the selected rate mode, the corresponding fields appear dynamically:
 
 **Fix:**
 - Fix rate (%)
@@ -43,93 +45,93 @@ cargo run -p mortgage_tui
 - Euribor spread (%)
 
 **Mixed:**
-- Fixed years — срок фиксированного периода
+- Fixed years — duration of the fixed period
 - Mixed fix rate (%)
 - Mixed fix spread (%)
 - Mixed euribor tenor
-- Mixed euribor spread (%) — скрывается при same_spread
-- Same spread — Yes / No (переключение ←→)
+- Mixed euribor spread (%) — hidden when same_spread is enabled
+- Same spread — Yes / No (toggle ←→)
 
-**Prepayments (множественные):**
+**Prepayments (multiple):**
 - Prepayment date — YYYY-MM-DD
 - Prepayment amount
 - Prepayment effect — ReduceTerm / ReducePayment
-- Add prepayment — Enter для добавления, Delete для удаления последнего
+- Add prepayment — Enter to add, Delete to remove last
 
 **Break-even upfront costs:**
-- Upfront cost — фиксированная сумма (0 = не используется)
-- Upfront percent — процент от суммы кредита (0 = не используется)
+- Upfront cost — fixed amount (0 = not used)
+- Upfront percent — percentage of loan amount (0 = not used)
 
-### Результаты
+### Results
 
-После нажатия `Enter` отображается экран результатов:
+After pressing `Enter`, the results screen is displayed:
 
-**Верхняя панель — сводка:**
-- Сумма, срок, тип платежа, режим ставки
-- Общая сумма погашения основного долга
-- Общая сумма процентов
-- Итоговая переплата
-- Ежемесячный платёж (для аннуитета)
-- Точка пересечения: когда Principal > Interest
+**Top panel — summary:**
+- Amount, term, payment type, rate mode
+- Total principal repaid
+- Total interest paid
+- Total amount paid
+- Monthly payment (for annuity)
+- Crossover point: when Principal > Interest
 
-**Нижняя панель — таблица платежей:**
-- Столбцы: #, Date, Payment, Principal, Interest, Balance
-- Прокрутка: `↑` / `↓` или `PgUp` / `PgDown`
+**Bottom panel — payment schedule:**
+- Columns: #, Date, Payment, Principal, Interest, Balance
+- Scrolling: `↑` / `↓` or `PgUp` / `PgDown`
 
-### Горячие клавиши в результатах
+### Hotkeys in Results
 
-| Клавиша | Действие |
-|---------|----------|
-| `Esc` / `q` | Вернуться к форме / закрыть анализ (в форме — выход) |
-| `S` | Экспортировать таблицу в CSV (`/tmp/mortgage_tui_export.csv`) |
-| `Y` | Переключить годовую сводку |
-| `R` | Анализ чувствительности (±2%, ±1%, ±0.5%, 0%) |
-| `B` | Break-even vs аренда (автоматически 0.5% от суммы) |
-| `W` | Сохранить сессию (`/tmp/mortgage_session.json`) |
-| `L` | Загрузить сессию |
-| `↑` / `↓` | Прокрутка таблицы |
+| Key | Action |
+|-----|--------|
+| `Esc` / `q` | Return to form / close analysis (quit from form) |
+| `S` | Export table to CSV (`/tmp/mortgage_tui_export.csv`) |
+| `Y` | Toggle yearly summary |
+| `R` | Sensitivity analysis (±2%, ±1%, ±0.5%, 0%) |
+| `B` | Break-even vs rent (automatically 0.5% of amount) |
+| `W` | Save session (`/tmp/mortgage_session.json`) |
+| `L` | Load session |
+| `↑` / `↓` | Scroll table |
 
-### Годовая сводка
+### Yearly Summary
 
-При нажатии `Y` отображается годовая агрегация:
-- Year — год
-- Payment — сумма платежей за год
-- Principal — погашенный основной долг
-- Interest — уплаченные проценты
-- Months — количество платежей
-- Balance — остаток на конец года
+When pressing `Y`, yearly aggregation is displayed:
+- Year — calendar year
+- Payment — total payments for the year
+- Principal — principal repaid
+- Interest — interest paid
+- Months — number of payments
+- Balance — ending balance
 
-### Анализ чувствительности
+### Sensitivity Analysis
 
-При нажатии `R` отображается таблица:
-- Delta — изменение ставки
-- Rate % — эффективная ставка
-- Monthly — ежемесячный платёж
-- Interest — общие проценты
-- Total Paid — общая выплата
+When pressing `R`, a table is displayed:
+- Delta — rate change
+- Rate % — effective rate
+- Monthly — monthly payment
+- Interest — total interest
+- Total Paid — total amount paid
 
 ### Break-Even vs Rent
 
-При нажатии `B` отображается:
-- Monthly rent — ежемесячная аренда (0.5% от суммы)
-- Monthly mortgage — ежемесячный платёж
-- Upfront costs — начальные затраты
-- Total interest — общие проценты
-- Break-even — через сколько месяцев покупка окупится
+When pressing `B`, the following is displayed:
+- Monthly rent — monthly rent (0.5% of amount)
+- Monthly mortgage — monthly payment
+- Upfront costs — initial costs
+- Total interest — total interest
+- Break-even — how many months until buying pays off
 
-### Сессии
+### Sessions
 
-- `W` — сохраняет текущие параметры и результаты в `/tmp/mortgage_session.json`
-- `L` — загружает сессию из `/tmp/mortgage_session.json`
+- `W` — saves current parameters and results to `/tmp/mortgage_session.json`
+- `L` — loads session from `/tmp/mortgage_session.json`
 
-### Валидация
+### Validation
 
-При ошибках ввода (некорректная дата, отрицательное число и т.д.) появляется popup с описанием ошибки. Нажмите любую клавишу для закрытия.
+On input errors (invalid date, negative number, etc.) a popup with the error description appears. Press any key to close.
 
-## Сборка
+## Build
 
 ```bash
 cargo build --release -p mortgage_tui
 ```
 
-Бинарник: `target/release/mortgage_tui`
+Binary: `target/release/mortgage_tui`

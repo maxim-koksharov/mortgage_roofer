@@ -1,38 +1,40 @@
 # mortgage_gui
 
-Десктоп GUI для ипотечного калькулятора на `iced` с темизированным интерфейсом, векторными графиками и экспортом PDF.
+[Русская версия](README.ru.md)
 
-## Запуск
+Desktop GUI for the mortgage calculator built with `iced`, featuring a themed interface, vector charts, and PDF export.
+
+## Running
 
 ```bash
 cargo run -p mortgage_gui
 ```
 
-## Интерфейс
+## Interface
 
-Окно разделено на две панели:
-- **Левая** — форма ввода параметров (scrollable, секции с заголовками)
-- **Правая** — результаты, графики и анализ
+The window is split into two panels:
+- **Left** — parameter input form (scrollable, sections with headers)
+- **Right** — results, charts, and analysis
 
-### Дизайн
+### Design
 
-- **Тема**: TokyoNightStorm (тёмная тема)
-- **Секции**: Loan Parameters, Rate Configuration, Prepayments, Actions
-- **Валидация**: красные рамки на невалидных полях (amount, term, date)
-- **Status bar**: зелёный фон для успеха, красный для ошибок
+- **Theme**: TokyoNightStorm (dark theme)
+- **Sections**: Loan Parameters, Rate Configuration, Prepayments, Actions
+- **Validation**: red borders on invalid fields (amount, term, date)
+- **Status bar**: green background for success, red for errors
 
-### Форма ввода
+### Input Form
 
-| Поле | Описание |
-|------|----------|
-| Amount | Сумма кредита |
-| Term (years) | Срок в годах |
-| Start date | Дата начала (YYYY-MM-DD) |
+| Field | Description |
+|-------|-------------|
+| Amount | Loan amount |
+| Term (years) | Term in years |
+| Start date | Start date (YYYY-MM-DD) |
 | Currency | EUR / USD |
 | Payment type | Annuity / Diff |
 | Rate mode | Fix / Euribor / Mixed |
 
-Поля динамически показываются/скрываются в зависимости от выбранного режима ставки:
+Fields are dynamically shown/hidden depending on the selected rate mode:
 
 **Fix:** Rate (%), Spread (%)
 
@@ -40,91 +42,91 @@ cargo run -p mortgage_gui
 
 **Mixed:** Fixed years, Fix rate (%), Fix spread (%), Euribor tenor, Euribor spread (%), Same spread checkbox
 
-**Prepayments (множественные):**
+**Prepayments (multiple):**
 - Date, Amount, Effect (ReduceTerm/ReducePayment)
-- Кнопка "+ Add Prepayment" — добавляет в список
-- Список prepayments с кнопками "X" для удаления
+- "+ Add Prepayment" button — adds to the list
+- List of prepayments with "X" buttons for removal
 
 **Break-even upfront costs:**
-- Upfront cost — фиксированная сумма (0 = не используется)
-- Upfront percent — процент от суммы кредита (0 = не используется)
+- Upfront cost — fixed amount (0 = not used)
+- Upfront percent — percentage of loan amount (0 = not used)
 
-### Кнопки действий
+### Action Buttons
 
-- **Calculate** — расчёт графика платежей
-- **Export CSV** — экспорт в `/tmp/mortgage_payments.csv`
-- **Export PDF** — отчёт в `/tmp/mortgage_report.pdf`
-- **Save Session** — сохранение в `/tmp/mortgage_session.json`
-- **Load Session** — загрузка из `/tmp/mortgage_session.json`
+- **Calculate** — calculate payment schedule
+- **Export CSV** — export to `/tmp/mortgage_payments.csv`
+- **Export PDF** — report to `/tmp/mortgage_report.pdf`
+- **Save Session** — save to `/tmp/mortgage_session.json`
+- **Load Session** — load from `/tmp/mortgage_session.json`
 
-### Результаты
+### Results
 
-После нажатия **Calculate** в правой панели появляется:
-- Сводка: Monthly, Total Principal, Total Interest, Total Paid, Payments count
-- Точка пересечения Principal > Interest
-- Status bar с сообщением (зелёный — успех, красный — ошибка)
+After pressing **Calculate**, the right panel shows:
+- Summary: Monthly, Total Principal, Total Interest, Total Paid, Payments count
+- Principal > Interest crossover point
+- Status bar with message (green — success, red — error)
 
-### Вкладки
+### Tabs
 
-Окно результатов имеет 7 вкладок:
+The results window has 7 tabs:
 
-| Вкладка | Описание |
-|---------|----------|
-| **Table** | Полная таблица платежей с прокруткой |
-| **Stacked** | Stacked bar chart: Principal (зелёный) + Interest (красный) |
-| **Balance** | Линейный график остатка долга |
-| **Overlay** | Комбинированный: principal + interest + balance |
-| **Yearly** | Годовая сводка (year, payment, principal, interest, months, balance) |
-| **Sensitivity** | Анализ чувствительности (±2%, ±1%, ±0.5%, 0%) |
-| **Break-Even** | Break-even vs аренда (с полем ввода rent) |
+| Tab | Description |
+|-----|-------------|
+| **Table** | Full payment schedule with scrolling |
+| **Stacked** | Stacked bar chart: Principal (green) + Interest (red) |
+| **Balance** | Line chart of remaining balance |
+| **Overlay** | Combined: principal + interest + balance |
+| **Yearly** | Yearly summary (year, payment, principal, interest, months, balance) |
+| **Sensitivity** | Sensitivity analysis (±2%, ±1%, ±0.5%, 0%) |
+| **Break-Even** | Break-even vs rent (with rent input field) |
 
-### Графики
+### Charts
 
-Все графики рендерятся в SVG через `plotters` и отображаются в `iced::widget::svg`:
+All charts are rendered as SVG via `plotters` and displayed in `iced::widget::svg`:
 
-- **Stacked Bar**: Principal (зелёный) + Interest (красный) + маркер пересечения (синяя точка)
-- **Balance Line**: линия остатка долга (синяя)
-- **Overlay**: три линии — principal (зелёная), interest (красная), balance (синяя)
+- **Stacked Bar**: Principal (green) + Interest (red) + crossover marker (blue dot)
+- **Balance Line**: remaining balance line (blue)
+- **Overlay**: three lines — principal (green), interest (red), balance (blue)
 
-### Анализ чувствительности
+### Sensitivity Analysis
 
-Вкладка **Sensitivity** показывает таблицу:
-- Delta — изменение ставки
-- Rate % — эффективная ставка
-- Monthly — ежемесячный платёж
-- Interest — общие проценты
-- Total Paid — общая выплата
+The **Sensitivity** tab shows a table:
+- Delta — rate change
+- Rate % — effective rate
+- Monthly — monthly payment
+- Interest — total interest
+- Total Paid — total amount paid
 
 ### Break-Even vs Rent
 
-Вкладка **Break-Even** показывает:
-- Monthly rent (с полем ввода)
+The **Break-Even** tab shows:
+- Monthly rent (with input field)
 - Monthly mortgage
 - Upfront costs
 - Total interest
-- Break-even (месяцы и годы)
+- Break-even (months and years)
 - Explanation
 
-## Экспорт
+## Export
 
 ### CSV
-Нажмите **Export CSV** → файл сохраняется в `/tmp/mortgage_payments.csv`
+Click **Export CSV** → file is saved to `/tmp/mortgage_payments.csv`
 
 ### PDF
-Нажмите **Export PDF** → файл сохраняется в `/tmp/mortgage_report.pdf`
+Click **Export PDF** → file is saved to `/tmp/mortgage_report.pdf`
 
-Содержит:
-- **Страница 1**: сводка + таблица первых 60 платежей
-- **Страница 2**: встроенный график (PNG → PDF)
+Contains:
+- **Page 1**: summary + table of first 60 payments
+- **Page 2**: embedded chart (PNG → PDF)
 
-## Сессии
+## Sessions
 
-- **Save Session** — сохраняет параметры и результаты в `/tmp/mortgage_session.json`
-- **Load Session** — загружает сессию, восстанавливает все поля и результаты
+- **Save Session** — saves parameters and results to `/tmp/mortgage_session.json`
+- **Load Session** — loads session, restores all fields and results
 
-## Системные зависимости
+## System Dependencies
 
-GUI использует `iced` (wgpu/tiny-skia) и `plotters` (SVG backend). Убедитесь, что установлены:
+The GUI uses `iced` (wgpu/tiny-skia) and `plotters` (SVG backend). Make sure the following are installed:
 ```bash
 # AlmaLinux/RHEL
 sudo dnf install -y fontconfig-devel freetype-devel
@@ -133,7 +135,7 @@ sudo dnf install -y fontconfig-devel freetype-devel
 sudo apt-get install -y libfontconfig1-dev libfreetype6-dev
 ```
 
-## Сборка
+## Build
 
 ```bash
 # Debug
@@ -143,20 +145,20 @@ cargo build -p mortgage_gui
 cargo build --release -p mortgage_gui
 ```
 
-Бинарник: `target/release/mortgage_gui`
+Binary: `target/release/mortgage_gui`
 
-## Зависимости
+## Dependencies
 
 - `iced` — GUI framework (with `svg` feature)
-- `plotters` — векторные графики (SVG + bitmap backends)
-- `printpdf` — PDF генерация (with `embedded_images` feature)
-- `image` — PNG кодирование для встраивания в PDF
-- `mortgage_core` — расчёты, анализ, сессии
+- `plotters` — vector charts (SVG + bitmap backends)
+- `printpdf` — PDF generation (with `embedded_images` feature)
+- `image` — PNG encoding for embedding in PDF
+- `mortgage_core` — calculations, analysis, sessions
 
-## Примечания
+## Notes
 
-- График рендерится в SVG через `plotters` и отображается в `iced::widget::svg`
-- Для PDF график сначала рендерится в PNG через `plotters` bitmap backend, затем встраивается через `printpdf::Image`
-- При отсутствии графического адаптера `iced` автоматически переключается на программный рендерер
-- Валидация полей показывает красные рамки при некорректном вводе
-- Status bar меняет цвет в зависимости от статуса (зелёный — успех, красный — ошибка)
+- Charts are rendered as SVG via `plotters` and displayed in `iced::widget::svg`
+- For PDF, the chart is first rendered as PNG via `plotters` bitmap backend, then embedded via `printpdf::Image`
+- If no GPU is available, `iced` automatically falls back to software rendering
+- Field validation shows red borders on invalid input
+- Status bar changes color depending on status (green — success, red — error)

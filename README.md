@@ -1,59 +1,61 @@
 # Mortgage Roofer
 
-Кросс-платформенный калькулятор ипотеки на Rust. Поддерживает расчёт аннуитетных и дифференцированных платежей, множественные досрочные погашения, изменение ставки в процессе кредита, анализ чувствительности, break-even анализ и экспорт результатов.
+[Русская версия](README.ru.md)
 
-## Архитектура
+Cross-platform mortgage calculator written in Rust. Supports annuity and declining balance payments, multiple prepayments, variable rate modes, sensitivity analysis, break-even analysis, and result export.
 
-Проект организован как Cargo workspace из 4 crate:
+## Architecture
 
-| Crate | Описание |
-|-------|----------|
-| `mortgage_core` | Бизнес-логика: модели, калькулятор, анализ, Euribor, сессии. Library crate. |
-| `mortgage_cli` | Командная строка (`clap`). JSON-сценарии, CSV-экспорт, sensitivity/break-even. |
-| `mortgage_tui` | Терминальный интерфейс (`ratatui`/`crossterm`). Все фичи + горячие клавиши. |
-| `mortgage_gui` | Десктоп GUI (`iced`). Темизированный UI, 7 вкладок, графики, PDF-экспорт. |
+The project is organized as a Cargo workspace with 4 crates:
 
-## Возможности
+| Crate | Description |
+|-------|-------------|
+| `mortgage_core` | Business logic: models, calculator, analysis, Euribor, sessions. Library crate. |
+| `mortgage_cli` | Command-line interface (`clap`). JSON configs, CSV export, sensitivity/break-even. |
+| `mortgage_tui` | Terminal UI (`ratatui`/`crossterm`). All features + keyboard shortcuts. |
+| `mortgage_gui` | Desktop GUI (`iced`). Themed UI, 7 tabs, charts, PDF export. |
 
-### Основные
-- **Валюты**: USD, EUR (символ и форматирование)
-- **Типы платежей**: аннуитетный (`Annuity`) и дифференцированный (`Diff`)
-- **Дата начала**: настраиваемая дата старта кредита
-- **Режимы ставки**:
-  - `Fix` — фиксированная ставка на весь срок
-  - `Euribor` — плавающая ставка на основе Euribor + спред
-  - `Mixed` — фиксированный период, затем переход на Euribor+спред
-- **Досрочное погашение** (множественное):
-  - `ReduceTerm` — уменьшение срока кредита
-  - `ReducePayment` — уменьшение ежемесячного платежа
+## Features
+
+### Core
+- **Currencies**: USD, EUR (symbol and formatting)
+- **Payment types**: annuity (`Annuity`) and declining balance (`Diff`)
+- **Start date**: configurable loan start date
+- **Rate modes**:
+  - `Fix` — fixed rate for the entire term
+  - `Euribor` — floating rate based on Euribor + spread
+  - `Mixed` — fixed period, then switches to Euribor + spread
+- **Prepayments** (multiple):
+  - `ReduceTerm` — reduce the loan term
+  - `ReducePayment` — reduce the monthly payment
 - **Euribor**:
-  - Автозагрузка с ECB API (выбор tenor: 1m, 3m, 6m, 12m)
-  - Ручная кривая: пользователь задаёт ставку на конкретный период
+  - Auto-fetch from ECB API (tenor selection: 1m, 3m, 6m, 12m)
+  - Manual curve: user-defined rate for specific periods
 
-### Анализ
-- **Yearly Summary** — годовая агрегация платежей (платёж, основной долг, проценты, остаток)
-- **Rate Sensitivity** — таблица изменения платежей при ±0.5%, ±1%, ±2% ставки
-- **Break-Even vs Rent** — расчёт окупаемости покупки vs аренда (с учётом ежемесячной аренды и upfront costs)
+### Analysis
+- **Yearly Summary** — yearly aggregation of payments (payment, principal, interest, balance)
+- **Rate Sensitivity** — payment changes at ±0.5%, ±1%, ±2% rate adjustments
+- **Break-Even vs Rent** — calculates when buying beats renting (with monthly rent and upfront costs)
 
-### Графики (GUI)
-- **Stacked Bar** — Principal (зелёный) + Interest (красный) + маркер пересечения
-- **Balance Line** — линия остатка долга
-- **Overlay** — комбинированный: principal + interest + balance на одном графике
+### Charts (GUI)
+- **Stacked Bar** — Principal (green) + Interest (red) + crossover marker
+- **Balance Line** — remaining balance over time
+- **Overlay** — combined: principal + interest + balance on one chart
 
-### Экспорт и сессии
-- **CSV** — экспорт таблицы платежей
-- **PDF** — отчёт с сводкой, таблицей и графиком
-- **Session Save/Load** — сохранение/загрузка параметров и результатов в JSON
+### Export & Sessions
+- **CSV** — export payment schedule
+- **PDF** — report with summary, table, and chart
+- **Session Save/Load** — save/load parameters and results to JSON
 
-## Системные зависимости
+## System Dependencies
 
-В Docker уже установлены:
+Already installed in Docker:
 ```dockerfile
 fontconfig-devel
 freetype-devel
 ```
 
-При сборке вне Docker:
+When building outside Docker:
 ```bash
 # AlmaLinux/RHEL/Fedora
 sudo dnf install -y fontconfig-devel freetype-devel
@@ -62,53 +64,53 @@ sudo dnf install -y fontconfig-devel freetype-devel
 sudo apt-get install -y libfontconfig1-dev libfreetype6-dev
 ```
 
-## Сборка
+## Build
 
 ```bash
-# Весь workspace (debug)
+# Full workspace (debug)
 cargo build --workspace
 
-# Весь workspace (release)
+# Full workspace (release)
 cargo build --workspace --release
 
-# Тесты
+# Tests
 cargo test --workspace
 
-# Проверки
+# Checks
 cargo fmt --all -- --check
 cargo clippy --workspace -- -D warnings
 ```
 
-## Запуск
+## Running
 
 ### CLI
 ```bash
-# Базовый расчёт
+# Basic calculation
 cargo run -p mortgage_cli -- -a 185000 -t 30 -r 3.6
 
-# С JSON-конфигом
+# With JSON config
 cargo run -p mortgage_cli -- --config test_config.json
 
-# CSV-экспорт
+# CSV export
 cargo run -p mortgage_cli -- -a 100000 -t 10 -r 5 --format csv --output payments.csv
 
-# Годовая сводка
+# Yearly summary
 cargo run -p mortgage_cli -- -a 100000 -t 10 -r 5 --yearly
 
-# С досрочным погашением
+# With prepayment
 cargo run -p mortgage_cli -- -a 100000 -t 10 -r 5 --prepayment "2027-01-01:20000:ReduceTerm"
 
-# Анализ чувствительности
+# Sensitivity analysis
 cargo run -p mortgage_cli -- -a 200000 -t 20 -r 4.5 --sensitivity "-2,-1,0,1,2"
 
-# Break-even vs аренда (с upfront costs)
+# Break-even vs rent (with upfront costs)
 cargo run -p mortgage_cli -- -a 200000 -t 20 -r 4.5 --break-even-rent 1000 --upfront-percent 5
 cargo run -p mortgage_cli -- -a 200000 -t 20 -r 4.5 --break-even-rent 1000 --upfront-cost 10000
 
-# Сохранение сессии
+# Save session
 cargo run -p mortgage_cli -- -a 100000 -t 10 -r 5 --save session.json
 
-# Загрузка сессии
+# Load session
 cargo run -p mortgage_cli -- --load session.json
 ```
 
@@ -117,46 +119,45 @@ cargo run -p mortgage_cli -- --load session.json
 cargo run -p mortgage_tui
 ```
 
-**Горячие клавиши в результатах:**
-- `Y` — годовая сводка
-- `R` — анализ чувствительности
-- `B` — break-even vs аренда
-- `S` — экспорт CSV
-- `W` — сохранить сессию
-- `L` — загрузить сессию
+**Hotkeys in results:**
+- `Y` — yearly summary
+- `R` — sensitivity analysis
+- `B` — break-even vs rent
+- `S` — export CSV
+- `W` — save session
+- `L` — load session
 
 ### GUI
 ```bash
 cargo run -p mortgage_gui
 ```
 
-**Вкладки:** Table, Stacked, Balance, Overlay, Yearly, Sensitivity, Break-Even
+**Tabs:** Table, Stacked, Balance, Overlay, Yearly, Sensitivity, Break-Even
 
-## Примеры JSON-конфигов
+## JSON Config Examples
 
-См. `test_config.json` в корне проекта.
+See `test_config.json` in the project root.
 
 ## CI
 
-`.github/workflows/rust.yml` — автоматическая сборка, тесты, fmt и clippy на push/PR в `main`.
+`.github/workflows/rust.yml` — automatic build, tests, fmt, and clippy on push/PR to `main`.
 
-## Тесты
+## Tests
 
-73 теста покрывают:
-- Unit-тесты калькулятора (11)
+73 tests covering:
+- Calculator unit tests (11)
 - Edge cases (19)
 - Serde round-trip (19)
-- Property-based tests с proptest (8)
+- Property-based tests with proptest (8)
 - CLI integration (10)
 - Break-even (3)
 - Doc tests (3)
 
-## Документация
+## Documentation
 
-- [`ARCHITECTURE.md`](ARCHITECTURE.md) — детальное описание архитектуры проекта
-- [`AGENTS.md`](AGENTS.md) — инструкции для AI-агентов и разработчиков
+- [`AGENTS.md`](AGENTS.md) — instructions for AI agents and developers
 - Per-crate README: [`mortgage_core/`](mortgage_core/README.md), [`mortgage_cli/`](mortgage_cli/README.md), [`mortgage_tui/`](mortgage_tui/README.md), [`mortgage_gui/`](mortgage_gui/README.md)
 
-## Лицензия
+## License
 
 MIT

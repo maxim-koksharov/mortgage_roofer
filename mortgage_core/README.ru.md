@@ -1,20 +1,20 @@
 # mortgage_core
 
-[Русская версия](README.ru.md)
+[English version](README.md)
 
-Business logic library for the mortgage calculator.
+Библиотека бизнес-логики для ипотечного калькулятора.
 
-## Modules
+## Модули
 
-- `models` — domain models (LoanParams, Payment, LoanResult, RateMode, etc.)
-- `calculator` — payment schedule calculation
-- `analysis` — sensitivity analysis and break-even analysis
-- `euribor` — Euribor rate fetching from ECB API
-- `export` — CSV export
-- `session` — session save/load
-- `error` — typed errors
+- `models` — доменные модели (LoanParams, Payment, LoanResult, RateMode, и т.д.)
+- `calculator` — расчёт графика платежей
+- `analysis` — анализ чувствительности и break-even анализ
+- `euribor` — загрузка ставок Euribor с ECB API
+- `export` — экспорт в CSV
+- `session` — сохранение/загрузка сессий
+- `error` — типизированные ошибки
 
-## Models
+## Модели
 
 ### `Currency`
 ```rust
@@ -27,8 +27,8 @@ pub enum Currency {
 ### `PaymentType`
 ```rust
 pub enum PaymentType {
-    Annuity,  // fixed annuity
-    Diff,     // declining balance
+    Annuity,  // аннуитет
+    Diff,     // дифференцированный
 }
 ```
 
@@ -85,7 +85,7 @@ pub struct YearlySummary {
 }
 ```
 
-## Calculator API
+## API Калькулятора
 
 ```rust
 use mortgage_core::{Calculator, LoanParams};
@@ -96,20 +96,20 @@ let result = Calculator::calculate(&params)?;
 println!("Monthly: {:?}", result.monthly_payment);
 println!("Total interest: {}", result.total_interest);
 
-// Yearly summary
+// Годовая сводка
 for s in result.yearly_summaries() {
     println!("{}: payment={:.2} principal={:.2} interest={:.2} balance={:.2}",
         s.year, s.total_payment, s.total_principal, s.total_interest, s.ending_balance);
 }
 
-// Payment schedule
+// Таблица платежей
 for p in &result.payments {
     println!("{}: payment={:.2} principal={:.2} interest={:.2} balance={:.2}",
         p.date, p.payment, p.principal, p.interest, p.remaining_balance);
 }
 ```
 
-## Analysis
+## Анализ
 
 ### Rate Sensitivity
 ```rust
@@ -139,22 +139,22 @@ if let (Some(months), Some(years)) = (be.break_even_months, be.break_even_years)
 println!("{}", be.explanation);
 ```
 
-## Sessions
+## Сессии
 
 ```rust
 use mortgage_core::{save_session, load_session};
 
-// Save
+// Сохранение
 save_session("session.json", &params, &result)?;
 
-// Load
+// Загрузка
 let session = load_session("session.json")?;
 // session.params, session.result
 ```
 
 ## Euribor
 
-### Manual Curve
+### Ручная кривая
 ```rust
 params.euribor_curve = vec![
     EuriborPoint { date_from: NaiveDate::from_ymd_opt(2027, 1, 1).unwrap(), rate: 3.0 },
@@ -162,38 +162,38 @@ params.euribor_curve = vec![
 ];
 ```
 
-### Auto-fetch from ECB
+### Автозагрузка с ECB
 ```rust
 use mortgage_core::euribor;
 
 let rate = euribor::fetch_euribor(EuriborTenor::SixMonths)?;
-// or with cache
+// или с кэшем
 let mut cache = euribor::EuriborCache::default();
 let rate = cache.get_or_fetch(EuriborTenor::SixMonths)?;
 ```
 
-## Tests
+## Тесты
 
 ```bash
 cargo test -p mortgage_core
 ```
 
-70 tests covering:
-- Calculator unit tests (11)
+70 тестов покрывают:
+- Unit-тесты калькулятора (11)
 - Edge cases (19)
 - Serde round-trip (19)
-- Property-based tests with proptest (8)
+- Property-based tests с proptest (8)
 - Doc tests (3)
 
 ## Serde
 
-All models implement `Serialize`/`Deserialize` for JSON handling:
+Все модели реализуют `Serialize`/`Deserialize` для работы с JSON:
 ```rust
 let json = serde_json::to_string(&params)?;
 let params: LoanParams = serde_json::from_str(&json)?;
 ```
 
-## Validation
+## Валидация
 
 ```rust
 if let Err(errors) = params.validate() {
@@ -203,10 +203,10 @@ if let Err(errors) = params.validate() {
 }
 ```
 
-Validates:
-- Amount > 0 and <= 100,000,000
-- Term > 0 and <= 50 years
-- Rate >= 0 and <= 100%
+Проверяет:
+- Amount > 0 и <= 100,000,000
+- Term > 0 и <= 50 лет
+- Rate >= 0 и <= 100%
 - Spread >= 0
 - Prepayment date >= start_date
 - Prepayment amount > 0

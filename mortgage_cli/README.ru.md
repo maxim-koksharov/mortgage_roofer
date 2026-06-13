@@ -1,27 +1,27 @@
 # mortgage_cli
 
-[Русская версия](README.ru.md)
+[English version](README.md)
 
-Command-line interface for the mortgage calculator.
+Командная строка для ипотечного калькулятора.
 
-## Dependencies
+## Зависимости
 
-- `clap` — argument parsing
-- `mortgage_core` — calculations, analysis, sessions
-- `serde_json` — JSON configs and sessions
-- `chrono` — date handling
+- `clap` — парсинг аргументов
+- `mortgage_core` — расчёты, анализ, сессии
+- `serde_json` — JSON-конфиги и сессии
+- `chrono` — работа с датами
 
-## Running
+## Запуск
 
-### Basic Calculation
+### Базовый расчёт
 
 ```bash
 cargo run -p mortgage_cli -- -a 185000 -t 30 -r 3.6
 ```
 
-Outputs a summary and a table of the first 24 payments.
+Выводит сводку и таблицу первых 24 платежей.
 
-### All Arguments
+### Все аргументы
 
 ```
 Options:
@@ -52,72 +52,72 @@ Options:
   -h, --help                     Print help
 ```
 
-### Examples
+### Примеры
 
-**Fix (fixed rate):**
+**Fix (фиксированная ставка):**
 ```bash
 cargo run -p mortgage_cli -- -a 200000 -t 20 -r 4.5 --spread 0.5
 ```
 
-**Euribor (floating):**
+**Euribor (плавающая):**
 ```bash
 cargo run -p mortgage_cli -- -a 150000 -t 15 --rate-mode euribor --euribor-tenor 6m --spread 1.2
 ```
 
-**Mixed (fix → Euribor):**
+**Mixed (фикс → Euribor):**
 ```bash
 cargo run -p mortgage_cli -- -a 250000 -t 25 --rate-mode mixed --rate 3.0 --spread 1.0 --fix-years 5 --euribor-tenor 6m --euribor-spread 1.5
 ```
 
-**With start date:**
+**С датой начала:**
 ```bash
 cargo run -p mortgage_cli -- -a 100000 -t 10 -r 5 --start-date 2025-01-01
 ```
 
-**Yearly summary:**
+**Годовая сводка:**
 ```bash
 cargo run -p mortgage_cli -- -a 100000 -t 10 -r 5 --yearly
 ```
 
-**With prepayments:**
+**С досрочным погашением:**
 ```bash
 cargo run -p mortgage_cli -- -a 100000 -t 10 -r 5 \
   --prepayment "2027-01-01:20000:ReduceTerm" \
   --prepayment "2028-06-01:10000:ReducePayment"
 ```
 
-**Sensitivity analysis:**
+**Анализ чувствительности:**
 ```bash
 cargo run -p mortgage_cli -- -a 200000 -t 20 -r 4.5 --sensitivity "-2,-1,-0.5,0,0.5,1,2"
 ```
 
-**Break-even vs rent:**
+**Break-even vs аренда:**
 ```bash
 cargo run -p mortgage_cli -- -a 200000 -t 20 -r 4.5 --break-even-rent 1000 --upfront-percent 5
 ```
 
-**Save/load session:**
+**Сохранение/загрузка сессии:**
 ```bash
-# Save
+# Сохранить
 cargo run -p mortgage_cli -- -a 100000 -t 10 -r 5 --save session.json
 
-# Load
+# Загрузить
 cargo run -p mortgage_cli -- --load session.json
 ```
 
-### CSV Export
+### CSV-экспорт
 
 ```bash
-# To file
+# В файл
 cargo run -p mortgage_cli -- -a 100000 -t 10 -r 5 -o payments.csv
 
-# To stdout
+# В stdout
 cargo run -p mortgage_cli -- -a 100000 -t 10 -r 5 --format csv
 ```
 
-### JSON Config
+### JSON-конфиг
 
-Create a `config.json` file:
+Создайте файл `config.json`:
 ```json
 {
   "amount": 200000,
@@ -147,49 +147,49 @@ Create a `config.json` file:
 }
 ```
 
-Run:
+Запустите:
 ```bash
 cargo run -p mortgage_cli -- --config config.json
 ```
 
-### JSON Config Fields
+### Поля JSON-конфига
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `amount` | f64 | Loan amount |
-| `term_years` | u32 | Term in years |
-| `payment_type` | `"annuitet"` / `"diff"` | Payment type |
-| `currency` | `"Usd"` / `"Eur"` | Currency |
-| `start_date` | "YYYY-MM-DD" | Start date |
-| `rate_mode` | Fix / Euribor / Mixed | Rate mode |
-| `same_spread` | bool | Same spread for entire term |
-| `euribor_curve` | `Vec<EuriborPoint>` | Manual Euribor curve |
-| `prepayments` | `Vec<Prepayment>` | Prepayments (multiple) |
-| `upfront_cost` | `Option<f64>` | Fixed upfront costs for break-even |
-| `upfront_percent` | `Option<f64>` | Upfront costs as % of loan amount |
+| Поле | Тип | Описание |
+|------|-----|----------|
+| `amount` | f64 | Сумма кредита |
+| `term_years` | u32 | Срок в годах |
+| `payment_type` | `"annuitet"` / `"diff"` | Тип платежа |
+| `currency` | `"Usd"` / `"Eur"` | Валюта |
+| `start_date` | "YYYY-MM-DD" | Дата начала |
+| `rate_mode` | Fix / Euribor / Mixed | Режим ставки |
+| `same_spread` | bool | Одинаковый спред на весь срок |
+| `euribor_curve` | `Vec<EuriborPoint>` | Ручная кривая Euribor |
+| `prepayments` | `Vec<Prepayment>` | Досрочные погашения (множественные) |
+| `upfront_cost` | `Option<f64>` | Фиксированные upfront costs для break-even |
+| `upfront_percent` | `Option<f64>` | Upfront costs как % от суммы кредита |
 
-## Build
+## Сборка
 
 ```bash
 cargo build --release -p mortgage_cli
 ```
 
-Binary: `target/release/mortgage_cli`
+Бинарник: `target/release/mortgage_cli`
 
-## Tests
+## Тесты
 
 ```bash
 cargo test -p mortgage_cli
 ```
 
-10 integration tests covering:
-- Basic calculation
-- Diff payments
-- CSV output
-- CSV file
-- JSON config
-- Yearly summary
-- Mixed mode
-- Limit option
-- USD currency
-- Invalid config
+10 интеграционных тестов покрывают:
+- Базовый расчёт
+- Diff платежи
+- CSV вывод
+- CSV файл
+- JSON конфиг
+- Годовая сводка
+- Mixed режим
+- Limit опция
+- Валюта USD
+- Невалидный конфиг
