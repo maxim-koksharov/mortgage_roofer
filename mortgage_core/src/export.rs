@@ -20,6 +20,7 @@ use crate::models::Payment;
 ///     prepayments: vec![],
 ///     upfront_cost: None,
 ///     upfront_percent: None,
+///     down_payment: None,
 /// };
 ///
 /// let result = Calculator::calculate(&params).unwrap();
@@ -32,7 +33,12 @@ pub fn payments_to_csv(payments: &[Payment]) -> String {
     for p in payments {
         lines.push(format!(
             "{},{:.2},{:.2},{:.2},{:.2},{:.4}",
-            p.date, p.payment, p.principal, p.interest, p.remaining_balance, p.applied_rate
+            p.date.format("%d-%m-%Y"),
+            p.payment,
+            p.principal,
+            p.interest,
+            p.remaining_balance,
+            p.applied_rate
         ));
     }
     lines.join("\n") + "\n"

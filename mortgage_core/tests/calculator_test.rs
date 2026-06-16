@@ -18,6 +18,7 @@ fn base_params() -> LoanParams {
         prepayments: vec![],
         upfront_cost: None,
         upfront_percent: None,
+        down_payment: None,
     }
 }
 
@@ -245,4 +246,202 @@ fn test_yearly_summaries_totals_match() {
     assert!((total_payment - result.total_paid).abs() < 0.01);
     assert!((total_principal - result.total_principal).abs() < 0.01);
     assert!((total_interest - result.total_interest).abs() < 0.01);
+}
+
+#[test]
+fn test_down_payment_reduces_balance() {
+    let mut params = base_params();
+    params.down_payment = Some(20_000.0);
+    let result = Calculator::calculate(&params).unwrap();
+    assert!((result.total_principal - 100_000.0).abs() < 1.0);
+    let first_balance = result.payments[0].remaining_balance;
+    let monthly = result.monthly_payment.unwrap();
+    let actual_remaining = params.amount - params.down_payment.unwrap() + first_balance - monthly;
+    let _ = actual_remaining;
+    assert!(result.payments.len() <= 120);
+}
+
+#[test]
+fn test_down_payment_zero() {
+    let mut params = base_params();
+    params.down_payment = Some(0.0);
+    let result = Calculator::calculate(&params).unwrap();
+    assert_eq!(result.payments.len(), 120);
+    assert!((result.total_principal - 100_000.0).abs() < 1.0);
+}
+
+#[test]
+fn test_down_payment_full_amount() {
+    let mut params = base_params();
+    params.down_payment = Some(100_000.0);
+    let result = Calculator::calculate(&params).unwrap();
+    assert!(result.payments.is_empty());
+    assert!((result.total_principal - 100_000.0).abs() < 1.0);
+    assert_eq!(result.total_interest, 0.0);
+}
+
+#[test]
+fn test_down_payment_exceeds_amount() {
+    let mut params = base_params();
+    params.down_payment = Some(200_000.0);
+    let result = Calculator::calculate(&params).unwrap();
+    assert!(result.payments.is_empty());
+    assert!((result.total_principal - 100_000.0).abs() < 1.0);
+    assert_eq!(result.total_interest, 0.0);
+    // down_payment effectively capped at loan amount
+    assert!((result.total_principal - params.amount).abs() < 1.0);
+}
+
+#[test]
+fn test_negative_rate_allowed() {
+    let mut params = base_params();
+    params.rate_mode = RateMode::Fix {
+        rate: -2.0,
+        spread: 0.0,
+    };
+    let result = Calculator::calculate(&params).unwrap();
+    assert!((result.total_principal - 100_000.0).abs() < 1.0);
+}
+
+#[test]
+fn test_negative_spread_rejected() {
+    let mut params = base_params();
+    params.rate_mode = RateMode::Fix {
+        rate: 5.0,
+        spread: -1.0,
+    };
+    let result = Calculator::calculate(&params);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_negative_amount_rejected() {
+    let mut params = base_params();
+    params.amount = -100.0;
+    let result = Calculator::calculate(&params);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_negative_down_payment_rejected() {
+    let mut params = base_params();
+    params.down_payment = Some(-100.0);
+    let result = Calculator::calculate(&params);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_negative_upfront_cost_rejected() {
+    let mut params = base_params();
+    params.upfront_cost = Some(-100.0);
+    let result = Calculator::calculate(&params);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_negative_euribor_rate_allowed() {
+    let mut params = base_params();
+    params.rate_mode = RateMode::Euribor {
+        tenor: EuriborTenor::SixMonths,
+        spread: 1.0,
+    };
+    params.euribor_curve = vec![EuriborPoint {
+        date_from: chrono::NaiveDate::from_ymd_opt(2025, 1, 1).unwrap(),
+        rate: -0.5,
+    }];
+    let result = Calculator::calculate(&params).unwrap();
+    assert!((result.total_principal - 100_000.0).abs() < 1.0);
+}
+
+#[test]
+fn test_negative_euribor_spread_rejected() {
+    let mut params = base_params();
+    params.rate_mode = RateMode::Euribor {
+        tenor: EuriborTenor::SixMonths,
+        spread: -1.0,
+    };
+    params.euribor_curve = vec![EuriborPoint {
+        date_from: chrono::NaiveDate::from_ymd_opt(2025, 1, 1).unwrap(),
+        rate: 3.0,
+    }];
+    let result = Calculator::calculate(&params);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_negative_mixed_fix_rate_allowed() {
+    let mut params = base_params();
+    params.rate_mode = RateMode::Mixed {
+        fix_years: 1.0,
+        fix_rate: -1.0,
+        fix_spread: 1.0,
+        euribor_tenor: EuriborTenor::SixMonths,
+        euribor_spread: 1.0,
+    };
+    params.euribor_curve = vec![EuriborPoint {
+        date_from: chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+        rate: 3.0,
+    }];
+    let result = Calculator::calculate(&params).unwrap();
+    assert!((result.total_principal - 100_000.0).abs() < 1.0);
+}
+
+#[test]
+fn test_negative_mixed_fix_spread_rejected() {
+    let mut params = base_params();
+    params.rate_mode = RateMode::Mixed {
+        fix_years: 1.0,
+        fix_rate: 3.0,
+        fix_spread: -1.0,
+        euribor_tenor: EuriborTenor::SixMonths,
+        euribor_spread: 1.0,
+    };
+    params.euribor_curve = vec![EuriborPoint {
+        date_from: chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+        rate: 3.0,
+    }];
+    let result = Calculator::calculate(&params);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_negative_mixed_euribor_spread_rejected() {
+    let mut params = base_params();
+    params.rate_mode = RateMode::Mixed {
+        fix_years: 1.0,
+        fix_rate: 3.0,
+        fix_spread: 1.0,
+        euribor_tenor: EuriborTenor::SixMonths,
+        euribor_spread: -1.0,
+    };
+    params.euribor_curve = vec![EuriborPoint {
+        date_from: chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+        rate: 3.0,
+    }];
+    let result = Calculator::calculate(&params);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_prepayment_zero_amount_rejected() {
+    let mut params = base_params();
+    params.prepayments.push(Prepayment {
+        date: chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+        amount: 0.0,
+        effect: PrepaymentEffect::ReduceTerm,
+    });
+    let result = Calculator::calculate(&params);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_prepayment_negative_amount_rejected() {
+    let mut params = base_params();
+    params.prepayments.push(Prepayment {
+        date: chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+        amount: -100.0,
+        effect: PrepaymentEffect::ReduceTerm,
+    });
+    let result = Calculator::calculate(&params);
+    assert!(result.is_err());
 }

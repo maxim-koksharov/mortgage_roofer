@@ -22,6 +22,7 @@ use chrono::{Months, NaiveDate};
 ///     prepayments: vec![],
 ///     upfront_cost: None,
 ///     upfront_percent: None,
+///     down_payment: None,
 /// };
 ///
 /// let result = Calculator::calculate(&params).unwrap();
@@ -40,10 +41,11 @@ impl Calculator {
         }
 
         let mut payments = Vec::new();
-        let mut balance = params.amount;
+        let down_payment = params.down_payment.unwrap_or(0.0).min(params.amount);
+        let mut balance = params.amount - down_payment;
         let mut current_date = params.start_date;
         let mut total_interest = 0.0;
-        let mut total_principal = 0.0;
+        let mut total_principal = down_payment;
 
         let total_months = params.term_years * 12;
         let mut remaining_months = total_months;
@@ -53,6 +55,7 @@ impl Calculator {
 
         let mut target_monthly: Option<f64> = None;
         let mut target_principal: Option<f64> = None;
+        let mut prev_rate: Option<f64> = None;
 
         while balance > 0.01 && remaining_months > 0 {
             Self::apply_prepayments(
@@ -67,6 +70,11 @@ impl Calculator {
 
             let rate = Self::annual_rate_for_date(current_date, params);
             let monthly_rate = rate / 12.0 / 100.0;
+
+            if prev_rate.is_none_or(|r| (r - rate).abs() > 0.0001) {
+                target_monthly = None;
+            }
+            prev_rate = Some(rate);
 
             let interest = balance * monthly_rate;
             let (principal, payment) = match params.payment_type {
@@ -109,11 +117,7 @@ impl Calculator {
         let principal_exceeds_interest_at = payments.iter().position(|p| p.principal > p.interest);
 
         let monthly_payment = match params.payment_type {
-            PaymentType::Annuity if !payments.is_empty() => Some(Self::annuity_payment(
-                params.amount,
-                Self::monthly_rate(params, params.start_date),
-                total_months,
-            )),
+            PaymentType::Annuity => payments.first().map(|p| p.payment),
             _ => None,
         };
 
@@ -138,10 +142,6 @@ impl Calculator {
         }
     }
 
-    fn monthly_rate(params: &LoanParams, date: NaiveDate) -> f64 {
-        Self::annual_rate_for_date(date, params) / 12.0 / 100.0
-    }
-
     fn apply_prepayments(
         prepayments: &mut Vec<Prepayment>,
         balance: &mut f64,
@@ -152,7 +152,7 @@ impl Calculator {
         current_date: NaiveDate,
     ) {
         while let Some(prep) = prepayments.first() {
-            if prep.date != current_date {
+            if prep.date > current_date {
                 break;
             }
             let prep = prepayments.remove(0);
@@ -174,7 +174,7 @@ impl Calculator {
         }
     }
 
-    fn annual_rate_for_date(date: NaiveDate, params: &LoanParams) -> f64 {
+    pub(crate) fn annual_rate_for_date(date: NaiveDate, params: &LoanParams) -> f64 {
         match &params.rate_mode {
             RateMode::Fix { rate, spread } => rate + spread,
             RateMode::Euribor { spread, .. } => Self::euribor_for_date(date, params) + spread,
@@ -187,7 +187,7 @@ impl Calculator {
             } => {
                 let fix_end = params
                     .start_date
-                    .checked_add_months(Months::new((fix_years * 12.0) as u32))
+                    .checked_add_months(Months::new((fix_years * 12.0).round() as u32))
                     .expect("Invalid date");
                 if date < fix_end {
                     fix_rate + fix_spread
@@ -214,6 +214,46 @@ impl Calculator {
             .next_back()
             .unwrap_or(0.0)
     }
+
+    /// Reverse calculator: given a target monthly payment, annual rate (%) and term,
+    /// returns the maximum affordable loan amount.
+    ///
+    /// For annuity: `P = M * ((1+r)^n - 1) / (r * (1+r)^n)`
+    /// For diff:    `P = M * n / (1 + n * r)`  (first payment is the largest)
+    ///
+    /// where `r` = monthly rate (annual_rate / 12 / 100), `n` = total months.
+    pub fn reverse_calculate(
+        target_monthly: f64,
+        annual_rate: f64,
+        term_years: u32,
+        payment_type: PaymentType,
+    ) -> f64 {
+        let monthly_rate = annual_rate / 12.0 / 100.0;
+        let months = term_years * 12;
+
+        if target_monthly <= 0.0 || months == 0 {
+            return 0.0;
+        }
+
+        match payment_type {
+            PaymentType::Annuity => {
+                if monthly_rate > 0.0 {
+                    let n = months as i32;
+                    let pow = (1.0 + monthly_rate).powi(n);
+                    target_monthly * (pow - 1.0) / (monthly_rate * pow)
+                } else {
+                    target_monthly * months as f64
+                }
+            }
+            PaymentType::Diff => {
+                if monthly_rate > 0.0 {
+                    target_monthly * months as f64 / (1.0 + months as f64 * monthly_rate)
+                } else {
+                    target_monthly * months as f64
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -237,6 +277,7 @@ mod tests {
             prepayments: vec![],
             upfront_cost: None,
             upfront_percent: None,
+            down_payment: None,
         }
     }
 
@@ -393,6 +434,65 @@ mod tests {
             spread: 0.0,
         };
         let result = Calculator::calculate(&params);
-        assert!(result.is_err());
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_reverse_annuity_roundtrip() {
+        let params = default_params();
+        let result = Calculator::calculate(&params).unwrap();
+        let forward_monthly = result.monthly_payment.unwrap();
+        let reverse_amount = Calculator::reverse_calculate(
+            forward_monthly,
+            5.0,
+            params.term_years,
+            PaymentType::Annuity,
+        );
+        assert!(
+            (reverse_amount - params.amount).abs() < 1.0,
+            "Roundtrip: forward={} reverse={}",
+            params.amount,
+            reverse_amount
+        );
+    }
+
+    #[test]
+    fn test_reverse_diff_roundtrip() {
+        let mut params = default_params();
+        params.payment_type = PaymentType::Diff;
+        let result = Calculator::calculate(&params).unwrap();
+        let first_payment = result.payments.first().unwrap().payment;
+        let reverse_amount =
+            Calculator::reverse_calculate(first_payment, 5.0, params.term_years, PaymentType::Diff);
+        assert!(
+            (reverse_amount - params.amount).abs() < 1.0,
+            "Roundtrip diff: forward={} reverse={}",
+            params.amount,
+            reverse_amount
+        );
+    }
+
+    #[test]
+    fn test_reverse_annuity_zero_rate() {
+        let amount = Calculator::reverse_calculate(1000.0, 0.0, 10, PaymentType::Annuity);
+        assert!((amount - 120_000.0).abs() < 0.01, "Got {}", amount);
+    }
+
+    #[test]
+    fn test_reverse_diff_zero_rate() {
+        let amount = Calculator::reverse_calculate(1000.0, 0.0, 10, PaymentType::Diff);
+        assert!((amount - 120_000.0).abs() < 0.01, "Got {}", amount);
+    }
+
+    #[test]
+    fn test_reverse_zero_target() {
+        let amount = Calculator::reverse_calculate(0.0, 5.0, 10, PaymentType::Annuity);
+        assert_eq!(amount, 0.0);
+    }
+
+    #[test]
+    fn test_reverse_zero_term() {
+        let amount = Calculator::reverse_calculate(1000.0, 5.0, 0, PaymentType::Annuity);
+        assert_eq!(amount, 0.0);
     }
 }

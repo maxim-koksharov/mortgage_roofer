@@ -14,7 +14,7 @@ pub fn sensitivity_analysis(params: &LoanParams, deltas: &[f64]) -> Vec<Sensitiv
     let mut results = Vec::new();
     let base_rate = match &params.rate_mode {
         RateMode::Fix { rate, spread } => rate + spread,
-        RateMode::Euribor { spread, .. } => *spread,
+        RateMode::Euribor { .. } => Calculator::annual_rate_for_date(params.start_date, params),
         RateMode::Mixed {
             fix_rate,
             fix_spread,
@@ -24,17 +24,42 @@ pub fn sensitivity_analysis(params: &LoanParams, deltas: &[f64]) -> Vec<Sensitiv
 
     for &delta in deltas {
         let new_rate = (base_rate + delta).max(0.0);
-        let new_params = match &params.rate_mode {
+        let mut new_params = params.clone();
+        match &params.rate_mode {
             RateMode::Fix { spread, .. } => {
-                let mut p = params.clone();
-                p.rate_mode = RateMode::Fix {
+                new_params.rate_mode = RateMode::Fix {
                     rate: (new_rate - spread).max(0.0),
                     spread: *spread,
                 };
-                p
             }
-            _ => params.clone(),
-        };
+            RateMode::Euribor { spread, tenor } => {
+                for point in &mut new_params.euribor_curve {
+                    point.rate = (point.rate + delta).max(0.0);
+                }
+                new_params.rate_mode = RateMode::Euribor {
+                    tenor: *tenor,
+                    spread: *spread,
+                };
+            }
+            RateMode::Mixed {
+                fix_rate,
+                fix_spread,
+                euribor_tenor,
+                euribor_spread,
+                fix_years,
+            } => {
+                for point in &mut new_params.euribor_curve {
+                    point.rate = (point.rate + delta).max(0.0);
+                }
+                new_params.rate_mode = RateMode::Mixed {
+                    fix_years: *fix_years,
+                    fix_rate: (fix_rate + delta).max(0.0),
+                    fix_spread: *fix_spread,
+                    euribor_tenor: *euribor_tenor,
+                    euribor_spread: *euribor_spread,
+                };
+            }
+        }
 
         if let Ok(result) = Calculator::calculate(&new_params) {
             results.push(SensitivityPoint {
@@ -79,7 +104,10 @@ pub fn break_even_analysis(params: &LoanParams, monthly_rent: f64) -> BreakEvenR
         };
     };
 
-    let monthly_cost = result.monthly_payment.unwrap_or(0.0);
+    let monthly_cost = result
+        .monthly_payment
+        .or_else(|| result.payments.first().map(|p| p.payment))
+        .unwrap_or(0.0);
     let upfront = upfront_costs(params);
 
     if monthly_cost >= monthly_rent {
@@ -151,6 +179,7 @@ mod tests {
             prepayments: vec![],
             upfront_cost: None,
             upfront_percent: None,
+            down_payment: None,
         }
     }
 

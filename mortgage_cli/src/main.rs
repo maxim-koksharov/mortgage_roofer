@@ -1,4 +1,5 @@
 use clap::{Parser, ValueEnum};
+use mortgage_core::euribor::EuriborCache;
 use mortgage_core::models::*;
 use mortgage_core::{Calculator, payments_to_csv};
 use std::fs;
@@ -32,7 +33,7 @@ struct Args {
     #[arg(short = 'u', long)]
     currency: Option<String>,
 
-    /// Start date (YYYY-MM-DD)
+    /// Start date (DD-MM-YYYY)
     #[arg(long)]
     start_date: Option<String>,
 
@@ -92,7 +93,7 @@ struct Args {
     #[arg(long)]
     yearly: bool,
 
-    /// Prepayment in format "YYYY-MM-DD:amount:effect" (effect: ReduceTerm or ReducePayment). Can be repeated.
+    /// Prepayment in format "DD-MM-YYYY:amount:effect" (effect: ReduceTerm or ReducePayment). Can be repeated.
     #[arg(long = "prepayment", num_args = 1)]
     prepayments: Vec<String>,
 
@@ -189,13 +190,12 @@ fn parse_prepayment(prep_str: &str) -> Prepayment {
     let parts: Vec<&str> = prep_str.split(':').collect();
     if parts.len() != 3 {
         eprintln!(
-            "Invalid prepayment format: {}. Use YYYY-MM-DD:amount:effect",
+            "Invalid prepayment format: {}. Use DD-MM-YYYY:amount:effect",
             prep_str
         );
         std::process::exit(1);
     }
-    let date = parts[0]
-        .parse::<chrono::NaiveDate>()
+    let date = chrono::NaiveDate::parse_from_str(parts[0], "%d-%m-%Y")
         .unwrap_or_else(|_| panic!("Invalid prepayment date: {}", parts[0]));
     let amount: f64 = parts[1]
         .parse()
@@ -233,7 +233,7 @@ fn build_params_from_args(args: &Args) -> LoanParams {
     let start_date = args
         .start_date
         .as_ref()
-        .and_then(|s| s.parse::<chrono::NaiveDate>().ok())
+        .and_then(|s| chrono::NaiveDate::parse_from_str(s, "%d-%m-%Y").ok())
         .unwrap_or_else(|| chrono::Local::now().date_naive());
     let euribor_tenor = parse_or(args.euribor_tenor.as_ref(), EuriborTenor::SixMonths);
 
@@ -255,6 +255,37 @@ fn build_params_from_args(args: &Args) -> LoanParams {
         },
     };
 
+    let euribor_curve = match &rate_mode {
+        RateMode::Euribor { tenor, .. }
+        | RateMode::Mixed {
+            euribor_tenor: tenor,
+            ..
+        } => {
+            let curve_start = if let RateMode::Mixed { fix_years, .. } = &rate_mode {
+                start_date
+                    .checked_add_months(chrono::Months::new((fix_years * 12.0).round() as u32))
+                    .unwrap_or(start_date)
+            } else {
+                start_date
+            };
+            let mut cache = EuriborCache::default();
+            match cache.get_or_fetch(*tenor) {
+                Ok(rate) => {
+                    eprintln!("Auto-fetched Euribor {}: {:.3}%", tenor, rate);
+                    vec![EuriborPoint {
+                        date_from: curve_start,
+                        rate,
+                    }]
+                }
+                Err(e) => {
+                    eprintln!("Warning: Euribor fetch failed ({}), using empty curve", e);
+                    vec![]
+                }
+            }
+        }
+        _ => vec![],
+    };
+
     LoanParams {
         amount,
         term_years,
@@ -263,10 +294,11 @@ fn build_params_from_args(args: &Args) -> LoanParams {
         start_date,
         rate_mode,
         same_spread: args.same_spread,
-        euribor_curve: vec![],
+        euribor_curve,
         prepayments: vec![],
         upfront_cost: args.upfront_cost,
         upfront_percent: args.upfront_percent,
+        down_payment: None,
     }
 }
 

@@ -1,4 +1,5 @@
-use crate::app::{AnalysisView, App, Field, Screen, tenor_name};
+use crate::app::{AnalysisView, App, CalendarState, Field, Screen, days_in_month, tenor_name};
+use chrono::NaiveDate;
 use mortgage_core::payments_to_csv;
 use ratatui::{
     Frame,
@@ -12,14 +13,32 @@ use ratatui::{
 };
 use std::fs;
 
+use crate::app::{ReverseField, Tab};
+
 impl App {
     pub fn draw(&mut self, frame: &mut Frame) {
         match self.screen.clone() {
-            Screen::Form => self.draw_form(frame),
-            Screen::Results => self.draw_results(frame),
+            Screen::Form => match self.active_tab {
+                Tab::Calculator => self.draw_form(frame),
+                Tab::ReverseCalculator => self.draw_reverse_form(frame),
+            },
+            Screen::Results => match self.active_tab {
+                Tab::Calculator => self.draw_results(frame),
+                Tab::ReverseCalculator => self.draw_reverse_results(frame),
+            },
             Screen::Help => self.draw_help(frame),
+            Screen::Calendar { state, .. } => {
+                match self.active_tab {
+                    Tab::Calculator => self.draw_form(frame),
+                    Tab::ReverseCalculator => self.draw_reverse_form(frame),
+                }
+                self.draw_calendar(frame, &state);
+            }
             Screen::Popup(_) => {
-                self.draw_results(frame);
+                match self.active_tab {
+                    Tab::Calculator => self.draw_results(frame),
+                    Tab::ReverseCalculator => self.draw_reverse_results(frame),
+                }
                 if let Some(ref msg) = self.popup_msg {
                     self.draw_popup(frame, msg);
                 }
@@ -34,9 +53,11 @@ impl App {
             .constraints([Constraint::Length(3), Constraint::Min(0)])
             .split(area);
 
-        let header = Paragraph::new(
-            "Mortgage Calculator — Tab:next  Enter:calc  ←→:toggle  Backspace:delete",
-        )
+        let tab_label = self.active_tab.label();
+        let header = Paragraph::new(format!(
+            "[{}] Mortgage Calculator — Ctrl+Tab:switch  Tab:next  Enter:calc  ←→:toggle  Backspace:delete",
+            tab_label
+        ))
         .block(Block::default().borders(Borders::ALL))
         .alignment(Alignment::Center);
         frame.render_widget(header, chunks[0]);
@@ -133,6 +154,8 @@ impl App {
                 }
                 Field::UpfrontCost => ("Upfront cost", self.upfront_cost.clone()),
                 Field::UpfrontPercent => ("Upfront %", self.upfront_percent.clone()),
+                Field::DownPayment => ("Down payment", self.down_payment.clone()),
+                Field::ExtraMonthlyCost => ("Extra monthly cost", self.extra_monthly_cost.clone()),
             };
 
             let hint = if is_sel {
@@ -146,12 +169,14 @@ impl App {
                     | Field::PrepaymentEffect => " [←→ toggle]",
                     Field::AddPrepayment => " [Enter=add, Del=remove last]",
                     Field::EuriborFetchButton => " [Enter=fetch]",
-                    Field::EuriborDate => " [YYYY-MM-DD]",
+                    Field::EuriborDate => " [DD-MM-YYYY]",
                     Field::EuriborRate => " [type rate]",
                     Field::AddEuriborPoint => " [Enter=add, Del=remove last]",
-                    Field::StartDate => " [YYYY-MM-DD]",
+                    Field::StartDate => " [DD-MM-YYYY]",
                     Field::UpfrontCost => " [fixed amount or 0]",
                     Field::UpfrontPercent => " [percent or 0]",
+                    Field::DownPayment => " [amount or 0]",
+                    Field::ExtraMonthlyCost => " [insurance etc.]",
                     _ => " [type]",
                 }
             } else {
@@ -332,6 +357,7 @@ impl App {
 
                 frame.render_widget(table, chunks[1]);
             } else {
+                let extra = self.extra_monthly_cost.parse::<f64>().unwrap_or(0.0);
                 let header = Row::new(vec![
                     "#",
                     "Date",
@@ -339,6 +365,7 @@ impl App {
                     "Principal",
                     "Interest",
                     "Balance",
+                    "TOTAL",
                 ])
                 .style(Style::default().fg(Color::Yellow));
                 let rows: Vec<Row> = result
@@ -355,6 +382,7 @@ impl App {
                             format!("{:.2}", p.principal),
                             format!("{:.2}", p.interest),
                             format!("{:.2}", p.remaining_balance),
+                            format!("{:.2}", p.payment + extra),
                         ])
                     })
                     .collect();
@@ -363,6 +391,7 @@ impl App {
                     rows,
                     [
                         Constraint::Length(5),
+                        Constraint::Length(12),
                         Constraint::Length(12),
                         Constraint::Length(12),
                         Constraint::Length(12),
@@ -446,6 +475,10 @@ impl App {
                 Span::raw("              Remove last Euribor point or prepayment"),
             ]),
             Line::from(vec![
+                Span::styled("Ctrl+Tab", Style::default().fg(Color::Cyan)),
+                Span::raw("            Switch tab (Calculator / Max Loan)"),
+            ]),
+            Line::from(vec![
                 Span::styled("q / Esc", Style::default().fg(Color::Cyan)),
                 Span::raw("             Quit"),
             ]),
@@ -499,6 +532,21 @@ impl App {
             ]),
             Line::from(""),
             Line::from(Span::styled(
+                "=== Max Loan Tab ===",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Line::from(""),
+            Line::from("Enter target monthly payment and rate;"),
+            Line::from("press Enter to see max affordable amounts for 5-34 yr terms."),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("Ctrl+Tab", Style::default().fg(Color::Cyan)),
+                Span::raw("            Switch to main Calculator tab"),
+            ]),
+            Line::from(""),
+            Line::from(Span::styled(
                 "=== Help Screen ===",
                 Style::default()
                     .fg(Color::Yellow)
@@ -534,6 +582,278 @@ impl App {
             .block(Block::default().borders(Borders::ALL).title("Message"))
             .alignment(Alignment::Center);
         frame.render_widget(popup, popup_area);
+    }
+
+    fn draw_calendar(&self, frame: &mut Frame, state: &CalendarState) {
+        use chrono::Datelike;
+        let area = frame.area();
+        let popup_area = centered_rect(45, 55, area);
+        frame.render_widget(Clear, popup_area);
+
+        let month_names = [
+            "January",
+            "February",
+            "March",
+            "April",
+            "May",
+            "June",
+            "July",
+            "August",
+            "September",
+            "October",
+            "November",
+            "December",
+        ];
+        let title = format!("{} {}", month_names[(state.month - 1) as usize], state.year);
+        let hint =
+            "Enter:select Esc:cancel \u{2190}\u{2191}\u{2193}\u{2192}:navigate PgUp/PgDn:month";
+
+        let first_of_month = NaiveDate::from_ymd_opt(state.year, state.month, 1).unwrap();
+        let weekday_idx = first_of_month.weekday().num_days_from_monday();
+        let days_in_month = days_in_month(state.year, state.month);
+
+        let mut lines: Vec<Line> = vec![
+            Line::from(Span::styled(
+                &title,
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Line::from(Span::styled(hint, Style::default().fg(Color::Gray))),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("Mo ", Style::default().fg(Color::Cyan)),
+                Span::styled("Tu ", Style::default().fg(Color::Cyan)),
+                Span::styled("We ", Style::default().fg(Color::Cyan)),
+                Span::styled("Th ", Style::default().fg(Color::Cyan)),
+                Span::styled("Fr ", Style::default().fg(Color::Cyan)),
+                Span::styled("Sa ", Style::default().fg(Color::Cyan)),
+                Span::styled("Su ", Style::default().fg(Color::Cyan)),
+            ]),
+        ];
+
+        let mut week_spans: Vec<Span> = Vec::new();
+        let mut day_count = 0;
+
+        for _ in 0..weekday_idx {
+            week_spans.push(Span::raw("   "));
+            day_count += 1;
+        }
+
+        for day in 1..=days_in_month {
+            let is_selected = state.selected_day == Some(day);
+            let style = if is_selected {
+                Style::default()
+                    .bg(Color::Blue)
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            };
+            week_spans.push(Span::styled(format!("{:>2} ", day), style));
+            day_count += 1;
+
+            if day_count % 7 == 0 {
+                lines.push(Line::from(week_spans.clone()));
+                week_spans.clear();
+            }
+        }
+
+        if !week_spans.is_empty() {
+            while day_count % 7 != 0 {
+                week_spans.push(Span::raw("   "));
+                day_count += 1;
+            }
+            lines.push(Line::from(week_spans));
+        }
+
+        let calendar = Paragraph::new(Text::from(lines))
+            .block(Block::default().borders(Borders::ALL).title("Calendar"))
+            .alignment(Alignment::Left);
+        frame.render_widget(calendar, popup_area);
+    }
+
+    fn draw_reverse_form(&self, frame: &mut Frame) {
+        let area = frame.area();
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(3), Constraint::Min(0)])
+            .split(area);
+
+        let tab_label = self.active_tab.label();
+        let header = Paragraph::new(format!(
+            "[{}] Max Loan Calculator — Ctrl+Tab:switch  Tab:next  Enter:calc  ←→:toggle  Backspace:delete",
+            tab_label
+        ))
+        .block(Block::default().borders(Borders::ALL))
+        .alignment(Alignment::Center);
+        frame.render_widget(header, chunks[0]);
+
+        let mut lines = vec![];
+        for (i, field) in self.reverse_fields.iter().enumerate() {
+            let is_sel = i == self.reverse_selected;
+            let style = if is_sel {
+                Style::default()
+                    .bg(Color::Blue)
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            };
+
+            let (label, value) = match field {
+                ReverseField::TargetPayment => {
+                    ("Monthly payment", self.reverse_target_payment.clone())
+                }
+                ReverseField::PaymentType => (
+                    "Payment type",
+                    if self.reverse_payment_type == 0 {
+                        "Annuity".to_string()
+                    } else {
+                        "Diff".to_string()
+                    },
+                ),
+                ReverseField::RateMode => (
+                    "Rate mode",
+                    if self.reverse_rate_mode == 0 {
+                        "Fix".to_string()
+                    } else {
+                        "Euribor".to_string()
+                    },
+                ),
+                ReverseField::FixRate => ("Fix rate (%)", self.reverse_fix_rate.clone()),
+                ReverseField::FixSpread => ("Fix spread (%)", self.reverse_fix_spread.clone()),
+                ReverseField::EuriborTenor => (
+                    "Euribor tenor",
+                    tenor_name(self.reverse_euribor_tenor).to_string(),
+                ),
+                ReverseField::EuriborSpread => {
+                    ("Euribor spread (%)", self.reverse_euribor_spread.clone())
+                }
+                ReverseField::EuriborFetchButton => ("Euribor fetch", String::new()),
+                ReverseField::ExtraMonthlyCost => {
+                    ("Extra monthly cost", self.reverse_extra_monthly.clone())
+                }
+            };
+
+            let hint = if is_sel {
+                match field {
+                    ReverseField::PaymentType
+                    | ReverseField::RateMode
+                    | ReverseField::EuriborTenor => " [←→ toggle]",
+                    ReverseField::EuriborFetchButton => " [Enter to fetch current rate]",
+                    ReverseField::ExtraMonthlyCost => " [insurance etc.]",
+                    _ => " [type]",
+                }
+            } else {
+                ""
+            };
+
+            let line = Line::from(vec![
+                Span::styled(format!("{:>22}: ", label), style),
+                Span::styled(format!("{}{}", value, hint), style),
+            ]);
+            lines.push(line);
+        }
+
+        let form = Paragraph::new(Text::from(lines)).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Max Loan Parameters"),
+        );
+        frame.render_widget(form, chunks[1]);
+    }
+
+    fn draw_reverse_results(&self, frame: &mut Frame) {
+        let area = frame.area();
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(5), Constraint::Min(0)])
+            .split(area);
+
+        let summary_text = if let Some(ref rows) = self.reverse_result {
+            let sym = "€";
+            let target = rows.first().map_or(0.0, |r| r.monthly_payment);
+            let extra = rows.first().map_or(0.0, |r| r.extra_cost);
+            Text::from(vec![
+                Line::from(format!(
+                    "Monthly payment: {}{:.2}  |  Extra costs: {}{:.2}  |  Rate mode: {}",
+                    sym,
+                    target,
+                    sym,
+                    extra,
+                    if self.reverse_rate_mode == 0 {
+                        "Fix"
+                    } else {
+                        "Euribor"
+                    },
+                )),
+                Line::from(format!(
+                    "Terms: 5–34 years  |  {} rows  |  Ctrl+Tab:switch  Esc:back",
+                    rows.len()
+                )),
+            ])
+        } else {
+            Text::from("No results yet. Press Enter to calculate.")
+        };
+
+        let summary = Paragraph::new(summary_text).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Max Loan — Summary"),
+        );
+        frame.render_widget(summary, chunks[0]);
+
+        if let Some(ref rows) = self.reverse_result {
+            let header = Row::new(vec!["Term (yr)", "Max Amount", "Payment", "Extra", "TOTAL"])
+                .style(Style::default().fg(Color::Yellow));
+            let table_rows: Vec<Row> = rows
+                .iter()
+                .skip(self.scroll_offset)
+                .take(chunks[1].height as usize - 2)
+                .map(|r| {
+                    Row::new(vec![
+                        r.term_years.to_string(),
+                        format!("{:.2}", r.max_amount),
+                        format!("{:.2}", r.monthly_payment),
+                        format!("{:.2}", r.extra_cost),
+                        format!("{:.2}", r.total_monthly),
+                    ])
+                })
+                .collect();
+
+            let table = Table::new(
+                table_rows,
+                [
+                    Constraint::Length(12),
+                    Constraint::Length(14),
+                    Constraint::Length(12),
+                    Constraint::Length(11),
+                    Constraint::Length(12),
+                ],
+            )
+            .header(header)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Max Affordable Loan Amounts (↑↓ scroll)"),
+            );
+
+            frame.render_widget(table, chunks[1]);
+
+            let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .begin_symbol(None)
+                .end_symbol(None);
+            let mut scrollbar_state = ScrollbarState::new(rows.len()).position(self.scroll_offset);
+            frame.render_stateful_widget(
+                scrollbar,
+                chunks[1].inner(Margin {
+                    vertical: 1,
+                    horizontal: 0,
+                }),
+                &mut scrollbar_state,
+            );
+        }
     }
 
     pub fn export_csv(&mut self, path: &str) {

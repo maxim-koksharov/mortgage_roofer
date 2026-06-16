@@ -27,6 +27,7 @@ fn sample_params() -> LoanParams {
         }],
         upfront_cost: None,
         upfront_percent: None,
+        down_payment: None,
     }
 }
 
@@ -202,6 +203,7 @@ fn test_loan_result_serde_roundtrip() {
         prepayments: vec![],
         upfront_cost: None,
         upfront_percent: None,
+        down_payment: None,
     };
 
     let result = Calculator::calculate(&params).unwrap();

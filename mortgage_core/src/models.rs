@@ -192,6 +192,8 @@ pub struct LoanParams {
     pub upfront_cost: Option<f64>,
     /// Optional upfront costs as percent of loan amount.
     pub upfront_percent: Option<f64>,
+    /// Optional down payment (reduces initial loan balance).
+    pub down_payment: Option<f64>,
 }
 
 impl LoanParams {
@@ -213,9 +215,6 @@ impl LoanParams {
 
         match &self.rate_mode {
             RateMode::Fix { rate, spread } => {
-                if *rate < 0.0 {
-                    errors.push("Interest rate cannot be negative".to_string());
-                }
                 if *rate > 100.0 {
                     errors.push("Interest rate exceeds 100%".to_string());
                 }
@@ -227,10 +226,15 @@ impl LoanParams {
                 if *spread < 0.0 {
                     errors.push("Spread cannot be negative".to_string());
                 }
+                if self.euribor_curve.is_empty() {
+                    errors.push(
+                        "Euribor curve is empty; provide at least one rate point or fetch online"
+                            .to_string(),
+                    );
+                }
             }
             RateMode::Mixed {
                 fix_years,
-                fix_rate,
                 fix_spread,
                 euribor_spread,
                 ..
@@ -238,15 +242,27 @@ impl LoanParams {
                 if *fix_years <= 0.0 {
                     errors.push("Fixed period must be positive".to_string());
                 }
-                if *fix_rate < 0.0 {
-                    errors.push("Fixed rate cannot be negative".to_string());
-                }
                 if *fix_spread < 0.0 {
                     errors.push("Fixed spread cannot be negative".to_string());
                 }
                 if !self.same_spread && *euribor_spread < 0.0 {
                     errors.push("Euribor spread cannot be negative".to_string());
                 }
+                if self.euribor_curve.is_empty() {
+                    errors.push(
+                        "Euribor curve is empty; provide at least one rate point or fetch online"
+                            .to_string(),
+                    );
+                }
+            }
+        }
+
+        for w in self.euribor_curve.windows(2) {
+            if w[0].date_from >= w[1].date_from {
+                errors.push(format!(
+                    "Euribor curve dates must be strictly increasing: {} >= {}",
+                    w[0].date_from, w[1].date_from
+                ));
             }
         }
 
@@ -264,9 +280,6 @@ impl LoanParams {
             }
         }
 
-        if self.upfront_cost.is_some() && self.upfront_percent.is_some() {
-            errors.push("Specify upfront_cost or upfront_percent, not both".to_string());
-        }
         if let Some(cost) = self.upfront_cost
             && cost < 0.0
         {
@@ -276,6 +289,11 @@ impl LoanParams {
             && !(0.0..=100.0).contains(&percent)
         {
             errors.push("Upfront percent must be between 0 and 100".to_string());
+        }
+        if let Some(dp) = self.down_payment
+            && dp < 0.0
+        {
+            errors.push("Down payment cannot be negative".to_string());
         }
 
         if errors.is_empty() {

@@ -31,6 +31,7 @@ pub struct Session {
 ///     prepayments: vec![],
 ///     upfront_cost: None,
 ///     upfront_percent: None,
+///     down_payment: None,
 /// };
 ///
 /// let result = Calculator::calculate(&params).unwrap();
@@ -57,5 +58,11 @@ pub fn load_session<P: AsRef<Path>>(path: P) -> Result<Session, MortgageError> {
         .map_err(|e| MortgageError::ConfigError(format!("File read failed: {}", e)))?;
     let session: Session = serde_json::from_str(&content)
         .map_err(|e| MortgageError::ConfigError(format!("JSON parse failed: {}", e)))?;
+    if let Err(errors) = session.params.validate() {
+        return Err(MortgageError::ConfigError(format!(
+            "Session validation failed: {}",
+            errors.join("; ")
+        )));
+    }
     Ok(session)
 }

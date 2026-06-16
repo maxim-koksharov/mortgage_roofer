@@ -59,7 +59,7 @@ fn test_update_add_prepayment() {
 
     update(
         &mut state,
-        Message::PrepaymentDateChanged("2027-01-01".to_string()),
+        Message::PrepaymentDateChanged("01-01-2027".to_string()),
     );
     update(
         &mut state,
@@ -80,7 +80,7 @@ fn test_update_remove_prepayment() {
     let mut state = State::default();
     update(
         &mut state,
-        Message::PrepaymentDateChanged("2027-01-01".to_string()),
+        Message::PrepaymentDateChanged("01-01-2027".to_string()),
     );
     update(
         &mut state,
@@ -103,7 +103,7 @@ fn test_update_calculate() {
     state.amount = "100000".to_string();
     state.term = "10".to_string();
     state.rate = "5.0".to_string();
-    state.start_date = "2025-01-01".to_string();
+    state.start_date = "01-01-2025".to_string();
 
     update(&mut state, Message::Calculate);
 
@@ -146,7 +146,7 @@ fn test_update_calculate_invalid_date() {
 
     assert!(state.result.is_none());
     assert!(state.status_is_error);
-    assert_eq!(state.status, "Invalid start date (YYYY-MM-DD)");
+    assert_eq!(state.status, "Invalid start date (DD-MM-YYYY)");
 }
 
 #[test]
@@ -224,7 +224,7 @@ fn test_update_calculate_then_export_csv() {
     state.amount = "100000".to_string();
     state.term = "10".to_string();
     state.rate = "5.0".to_string();
-    state.start_date = "2025-01-01".to_string();
+    state.start_date = "01-01-2025".to_string();
 
     update(&mut state, Message::Calculate);
     assert!(state.result.is_some());
@@ -240,7 +240,7 @@ fn test_update_calculate_then_show_chart() {
     state.amount = "100000".to_string();
     state.term = "10".to_string();
     state.rate = "5.0".to_string();
-    state.start_date = "2025-01-01".to_string();
+    state.start_date = "01-01-2025".to_string();
 
     update(&mut state, Message::Calculate);
     assert!(state.result.is_some());
@@ -256,7 +256,7 @@ fn test_update_calculate_then_show_balance_chart() {
     state.amount = "100000".to_string();
     state.term = "10".to_string();
     state.rate = "5.0".to_string();
-    state.start_date = "2025-01-01".to_string();
+    state.start_date = "01-01-2025".to_string();
 
     update(&mut state, Message::Calculate);
     assert!(state.result.is_some());
@@ -272,13 +272,13 @@ fn test_update_calculate_then_show_overlay_chart() {
     state.amount = "100000".to_string();
     state.term = "10".to_string();
     state.rate = "5.0".to_string();
-    state.start_date = "2025-01-01".to_string();
+    state.start_date = "01-01-2025".to_string();
 
     update(&mut state, Message::Calculate);
     assert!(state.result.is_some());
 
-    update(&mut state, Message::ShowOverlayChart);
-    assert_eq!(state.active_tab, ViewTab::OverlayChart);
+    update(&mut state, Message::ShowBreakEven);
+    assert_eq!(state.active_tab, ViewTab::BreakEven);
     // Chart generation may fail in test environment (no fonts), but should not panic
 }
 
@@ -289,7 +289,7 @@ fn test_update_calculate_diff_payment() {
     state.term = "10".to_string();
     state.rate = "5.0".to_string();
     state.payment_type = "Diff".to_string();
-    state.start_date = "2025-01-01".to_string();
+    state.start_date = "01-01-2025".to_string();
 
     update(&mut state, Message::Calculate);
 
@@ -303,11 +303,11 @@ fn test_update_calculate_with_prepayments() {
     state.amount = "100000".to_string();
     state.term = "10".to_string();
     state.rate = "5.0".to_string();
-    state.start_date = "2025-01-01".to_string();
+    state.start_date = "01-01-2025".to_string();
 
     update(
         &mut state,
-        Message::PrepaymentDateChanged("2027-01-01".to_string()),
+        Message::PrepaymentDateChanged("01-01-2027".to_string()),
     );
     update(
         &mut state,
@@ -332,7 +332,7 @@ fn test_update_calculate_euribor_mode() {
     state.term = "10".to_string();
     state.rate_mode = "Euribor".to_string();
     state.euribor_spread = "1.0".to_string();
-    state.start_date = "2025-01-01".to_string();
+    state.start_date = "01-01-2025".to_string();
 
     update(&mut state, Message::Calculate);
 
@@ -350,7 +350,7 @@ fn test_update_calculate_mixed_mode() {
     state.mixed_fix_rate = "3.0".to_string();
     state.mixed_fix_spread = "1.0".to_string();
     state.mixed_euribor_spread = "1.5".to_string();
-    state.start_date = "2025-01-01".to_string();
+    state.start_date = "01-01-2025".to_string();
 
     update(&mut state, Message::Calculate);
 
@@ -364,7 +364,7 @@ fn test_update_session_save_load_roundtrip() {
     state.amount = "150000".to_string();
     state.term = "15".to_string();
     state.rate = "4.5".to_string();
-    state.start_date = "2025-01-01".to_string();
+    state.start_date = "01-01-2025".to_string();
 
     update(&mut state, Message::Calculate);
     assert!(state.result.is_some());
@@ -386,7 +386,7 @@ fn test_multiple_prepayments() {
 
     update(
         &mut state,
-        Message::PrepaymentDateChanged("2027-01-01".to_string()),
+        Message::PrepaymentDateChanged("01-01-2027".to_string()),
     );
     update(
         &mut state,
@@ -396,7 +396,7 @@ fn test_multiple_prepayments() {
 
     update(
         &mut state,
-        Message::PrepaymentDateChanged("2028-01-01".to_string()),
+        Message::PrepaymentDateChanged("01-01-2028".to_string()),
     );
     update(
         &mut state,
@@ -415,7 +415,7 @@ fn test_update_all_tabs_after_calculate() {
     state.amount = "100000".to_string();
     state.term = "10".to_string();
     state.rate = "5.0".to_string();
-    state.start_date = "2025-01-01".to_string();
+    state.start_date = "01-01-2025".to_string();
 
     update(&mut state, Message::Calculate);
     assert!(state.result.is_some());
@@ -434,11 +434,7 @@ fn test_update_all_tabs_after_calculate() {
     }
 
     // Chart tabs may fail in test environment (no fonts), but should not panic
-    let chart_tabs = vec![
-        Message::ShowChart,
-        Message::ShowBalanceChart,
-        Message::ShowOverlayChart,
-    ];
+    let chart_tabs = vec![Message::ShowChart, Message::ShowBalanceChart];
 
     for msg in chart_tabs {
         update(&mut state, msg);

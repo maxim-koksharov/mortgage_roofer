@@ -96,7 +96,7 @@ fn test_cli_yearly_summary() {
             "5",
             "--yearly",
             "--start-date",
-            "2025-01-01",
+            "01-01-2025",
         ])
         .output()
         .expect("Failed to run CLI");

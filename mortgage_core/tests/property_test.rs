@@ -17,6 +17,7 @@ fn valid_params_strategy() -> impl Strategy<Value = LoanParams> {
             prepayments: vec![],
             upfront_cost: None,
             upfront_percent: None,
+            down_payment: None,
         },
     )
 }
