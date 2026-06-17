@@ -1266,6 +1266,7 @@ fn view_tab_content<'a>(state: &'a State, result: &'a LoanResult) -> Element<'a,
                 payments: &result.payments,
                 x_axis_mode: state.x_axis_mode,
                 hovered: state.hovered_payment,
+                cross_idx: result.principal_exceeds_interest_at,
             })
             .width(Length::Fill)
             .height(Length::Fill);
@@ -1283,6 +1284,7 @@ fn view_tab_content<'a>(state: &'a State, result: &'a LoanResult) -> Element<'a,
                 payments: &result.payments,
                 x_axis_mode: state.x_axis_mode,
                 hovered: state.hovered_payment,
+                cross_idx: result.principal_exceeds_interest_at,
             })
             .width(Length::Fill)
             .height(Length::Fill);
@@ -2083,6 +2085,7 @@ struct StackedChart<'a> {
     payments: &'a [Payment],
     x_axis_mode: XAxisMode,
     hovered: Option<usize>,
+    cross_idx: Option<usize>,
 }
 
 impl StackedChart<'_> {
@@ -2233,6 +2236,21 @@ impl Program<Message> for StackedChart<'_> {
             }
         }
 
+        // Pink dot at principal-exceeds-interest crossover
+        if let Some(cross_idx) = self.cross_idx
+            && cross_idx < n
+        {
+            let p = &self.payments[cross_idx];
+            let cx = chart.x + cross_idx as f32 * step;
+            let ph = (p.principal as f32 / max_y) * chart.height;
+            let ih = (p.interest as f32 / max_y) * chart.height;
+            let cy = chart.y + chart.height - ph - ih;
+            let circle = canvas::Path::new(|b| {
+                b.circle(Point::new(cx, cy), 5.0);
+            });
+            frame.fill(&circle, Color::from_rgb(1.0, 0.4, 0.7));
+        }
+
         // Hover highlight
         if let Some(idx) = self.hovered
             && idx < n
@@ -2297,20 +2315,37 @@ impl Program<Message> for StackedChart<'_> {
         {
             let p = &self.payments[idx];
             let bx = chart.x + idx as f32 * step - bar_w / 2.0;
-            let tx = (bx + bar_w / 2.0 - 70.0)
+            let lines = [
+                format!("#{} ({})", idx + 1, p.date.format("%b %Y")),
+                format!("Principal: {:.2}", p.principal),
+                format!("Interest: {:.2}", p.interest),
+                format!("Total: {:.2}", p.payment),
+            ];
+            let char_w = 6.6;
+            let pad_x = 5.0;
+            let pad_y = 2.0;
+            let line_h = 16.0;
+            let bottom_pad = 6.0;
+            let max_w = lines
+                .iter()
+                .map(|l| l.len() as f32 * char_w)
+                .fold(0.0, f32::max);
+            let tw = max_w + 2.0 * pad_x;
+            let th = lines.len() as f32 * line_h + pad_y + bottom_pad;
+            let tx = (bx + bar_w / 2.0 - tw / 2.0)
                 .max(chart.x + 5.0)
-                .min(chart.x + chart.width - 150.0);
+                .min((chart.x + chart.width - tw).max(chart.x + 5.0));
             let ty = chart.y + 2.0;
             frame.fill_rectangle(
                 Point::new(tx, ty),
-                Size::new(150.0, 58.0),
+                Size::new(tw, th),
                 Color::from_rgba(1.0, 1.0, 0.95, 1.0),
             );
             let tt_border = canvas::Path::new(|b| {
                 b.move_to(Point::new(tx, ty));
-                b.line_to(Point::new(tx + 150.0, ty));
-                b.line_to(Point::new(tx + 150.0, ty + 58.0));
-                b.line_to(Point::new(tx, ty + 58.0));
+                b.line_to(Point::new(tx + tw, ty));
+                b.line_to(Point::new(tx + tw, ty + th));
+                b.line_to(Point::new(tx, ty + th));
                 b.close();
             });
             frame.stroke(
@@ -2319,34 +2354,21 @@ impl Program<Message> for StackedChart<'_> {
                     .with_color(axis_color)
                     .with_width(1.0),
             );
-            frame.fill_text(canvas::Text {
-                content: format!("#{} ({})", idx + 1, p.date.format("%b %Y")),
-                position: Point::new(tx + 5.0, ty + 2.0),
-                color: Color::from_rgb(0.0, 0.0, 0.0),
-                size: Pixels(11.0),
-                ..Default::default()
-            });
-            frame.fill_text(canvas::Text {
-                content: format!("Principal: {:.2}", p.principal),
-                position: Point::new(tx + 5.0, ty + 18.0),
-                color: Color::from_rgb(0.2, 0.6, 0.2),
-                size: Pixels(11.0),
-                ..Default::default()
-            });
-            frame.fill_text(canvas::Text {
-                content: format!("Interest: {:.2}", p.interest),
-                position: Point::new(tx + 5.0, ty + 34.0),
-                color: Color::from_rgb(0.8, 0.2, 0.2),
-                size: Pixels(11.0),
-                ..Default::default()
-            });
-            frame.fill_text(canvas::Text {
-                content: format!("Total: {:.2}", p.payment),
-                position: Point::new(tx + 5.0, ty + 50.0),
-                color: text_color,
-                size: Pixels(11.0),
-                ..Default::default()
-            });
+            let colors = [
+                Color::from_rgb(0.0, 0.0, 0.0),
+                Color::from_rgb(0.2, 0.6, 0.2),
+                Color::from_rgb(0.8, 0.2, 0.2),
+                text_color,
+            ];
+            for (i, content) in lines.iter().enumerate() {
+                frame.fill_text(canvas::Text {
+                    content: content.clone(),
+                    position: Point::new(tx + pad_x, ty + pad_y + i as f32 * line_h),
+                    color: colors[i],
+                    size: Pixels(11.0),
+                    ..Default::default()
+                });
+            }
         }
 
         vec![frame.into_geometry()]
@@ -2399,6 +2421,7 @@ struct BalanceChart<'a> {
     payments: &'a [Payment],
     x_axis_mode: XAxisMode,
     hovered: Option<usize>,
+    cross_idx: Option<usize>,
 }
 
 impl BalanceChart<'_> {
@@ -2560,6 +2583,19 @@ impl Program<Message> for BalanceChart<'_> {
             );
         }
 
+        // Pink dot at principal-exceeds-interest crossover
+        if let Some(cross_idx) = self.cross_idx
+            && cross_idx < n
+        {
+            let cx = chart.x + (cross_idx as f32 / (n - 1).max(1) as f32) * chart.width;
+            let cy = chart.y + chart.height
+                - (self.payments[cross_idx].remaining_balance as f32 / max_y) * chart.height;
+            let circle = canvas::Path::new(|b| {
+                b.circle(Point::new(cx, cy), 5.0);
+            });
+            frame.fill(&circle, Color::from_rgb(1.0, 0.4, 0.7));
+        }
+
         // Legend
         let leg_x = chart.x + chart.width - 80.0;
         let leg_y = chart.y + 5.0;
@@ -2604,21 +2640,37 @@ impl Program<Message> for BalanceChart<'_> {
             && idx < n
         {
             let p = &self.payments[idx];
+            let lines = [
+                format!("#{} ({})", idx + 1, p.date.format("%b %Y")),
+                format!("Balance: {:.2}", p.remaining_balance),
+                format!("Paid: {:.2}", p.payment),
+            ];
+            let char_w = 6.6;
+            let pad_x = 5.0;
+            let pad_y = 2.0;
+            let line_h = 16.0;
+            let bottom_pad = 6.0;
+            let max_w = lines
+                .iter()
+                .map(|l| l.len() as f32 * char_w)
+                .fold(0.0, f32::max);
+            let tw = max_w + 2.0 * pad_x;
+            let th = lines.len() as f32 * line_h + pad_y + bottom_pad;
             let x = chart.x + (idx as f32 / (n - 1).max(1) as f32) * chart.width;
-            let tx = (x - 60.0)
+            let tx = (x - tw / 2.0)
                 .max(chart.x + 5.0)
-                .min(chart.x + chart.width - 130.0);
+                .min((chart.x + chart.width - tw).max(chart.x + 5.0));
             let ty = chart.y + 2.0;
             frame.fill_rectangle(
                 Point::new(tx, ty),
-                Size::new(130.0, 42.0),
+                Size::new(tw, th),
                 Color::from_rgba(1.0, 1.0, 0.95, 1.0),
             );
             let tt_border = canvas::Path::new(|b| {
                 b.move_to(Point::new(tx, ty));
-                b.line_to(Point::new(tx + 130.0, ty));
-                b.line_to(Point::new(tx + 130.0, ty + 42.0));
-                b.line_to(Point::new(tx, ty + 42.0));
+                b.line_to(Point::new(tx + tw, ty));
+                b.line_to(Point::new(tx + tw, ty + th));
+                b.line_to(Point::new(tx, ty + th));
                 b.close();
             });
             frame.stroke(
@@ -2627,27 +2679,20 @@ impl Program<Message> for BalanceChart<'_> {
                     .with_color(axis_color)
                     .with_width(1.0),
             );
-            frame.fill_text(canvas::Text {
-                content: format!("#{} ({})", idx + 1, p.date.format("%b %Y")),
-                position: Point::new(tx + 5.0, ty + 2.0),
-                color: Color::from_rgb(0.0, 0.0, 0.0),
-                size: Pixels(11.0),
-                ..Default::default()
-            });
-            frame.fill_text(canvas::Text {
-                content: format!("Balance: {:.2}", p.remaining_balance),
-                position: Point::new(tx + 5.0, ty + 18.0),
-                color: Color::from_rgb(0.2, 0.4, 0.8),
-                size: Pixels(11.0),
-                ..Default::default()
-            });
-            frame.fill_text(canvas::Text {
-                content: format!("Paid: {:.2}", p.payment),
-                position: Point::new(tx + 5.0, ty + 34.0),
-                color: text_color,
-                size: Pixels(11.0),
-                ..Default::default()
-            });
+            let colors = [
+                Color::from_rgb(0.0, 0.0, 0.0),
+                Color::from_rgb(0.2, 0.4, 0.8),
+                text_color,
+            ];
+            for (i, content) in lines.iter().enumerate() {
+                frame.fill_text(canvas::Text {
+                    content: content.clone(),
+                    position: Point::new(tx + pad_x, ty + pad_y + i as f32 * line_h),
+                    color: colors[i],
+                    size: Pixels(11.0),
+                    ..Default::default()
+                });
+            }
         }
 
         vec![frame.into_geometry()]
@@ -2703,8 +2748,8 @@ fn parse_tenor(s: &str) -> EuriborTenor {
 #[cfg(test)]
 mod chart_tests {
     use super::*;
-    use iced::mouse;
     use iced::Rectangle;
+    use iced::mouse;
     use mortgage_core::models::Payment;
 
     fn dummy_payments(n: usize) -> Vec<Payment> {
@@ -2728,6 +2773,7 @@ mod chart_tests {
             payments,
             x_axis_mode: XAxisMode::PaymentNumber,
             hovered: None,
+            cross_idx: None,
         }
     }
 
@@ -2736,6 +2782,7 @@ mod chart_tests {
             payments,
             x_axis_mode: XAxisMode::PaymentNumber,
             hovered: None,
+            cross_idx: None,
         }
     }
 

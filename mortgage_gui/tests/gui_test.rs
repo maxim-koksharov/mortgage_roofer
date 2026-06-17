@@ -493,7 +493,11 @@ fn test_chart_area_coordinates_indirect() {
     assert_eq!(state.active_tab, ViewTab::BalanceChart);
 
     // Ensure error status is not set
-    assert!(!state.status_is_error, "Chart tab switch caused error: {}", state.status);
+    assert!(
+        !state.status_is_error,
+        "Chart tab switch caused error: {}",
+        state.status
+    );
 }
 
 #[test]
