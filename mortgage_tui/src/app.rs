@@ -483,20 +483,19 @@ impl App {
 
     pub fn fetch_euribor(&mut self) -> Result<(), String> {
         let tenor = self.euribor_tenor();
-        match self.euribor_cache.get_or_fetch(tenor) {
-            Ok(rate) => {
-                let date_from = self.euribor_start_date();
-                if let Some(existing) = self
-                    .euribor_curve
-                    .iter_mut()
-                    .find(|p| p.date_from == date_from)
-                {
-                    existing.rate = rate;
-                } else {
-                    self.euribor_curve.push(EuriborPoint { date_from, rate });
-                }
-                self.euribor_curve.sort_by_key(|p| p.date_from);
-                self.popup_msg = Some(format!("Fetched Euribor {}: {:.3}%", tenor, rate));
+        let start_date = self.euribor_start_date();
+        let term_years = self.term.parse::<u32>().unwrap_or(30);
+        let end_date = start_date
+            .checked_add_months(chrono::Months::new(term_years * 12))
+            .unwrap_or(start_date);
+        match self
+            .euribor_cache
+            .fetch_historical(tenor, start_date, end_date)
+        {
+            Ok(points) => {
+                let count = points.len();
+                self.euribor_curve = points;
+                self.popup_msg = Some(format!("Loaded {} Euribor {} points", count, tenor));
                 Ok(())
             }
             Err(e) => Err(format!("Euribor fetch failed: {}", e)),
@@ -587,26 +586,32 @@ impl App {
             _ => return Err("Unknown rate mode".to_string()),
         };
 
-        let euribor_curve = if (self.rate_mode == 1 || self.rate_mode == 2)
-            && self.euribor_curve.is_empty()
-        {
-            let tenor = self.euribor_tenor();
-            match self.euribor_cache.get_or_fetch(tenor) {
-                Ok(rate) => {
-                    self.popup_msg = Some(format!("Auto-fetched Euribor {}: {:.3}%", tenor, rate));
-                    vec![EuriborPoint {
-                        date_from: self.euribor_start_date(),
-                        rate,
-                    }]
+        let euribor_curve =
+            if (self.rate_mode == 1 || self.rate_mode == 2) && self.euribor_curve.is_empty() {
+                let tenor = self.euribor_tenor();
+                let start_date = self.euribor_start_date();
+                let term_years = self.term.parse::<u32>().unwrap_or(30);
+                let end_date = start_date
+                    .checked_add_months(chrono::Months::new(term_years * 12))
+                    .unwrap_or(start_date);
+                match self
+                    .euribor_cache
+                    .fetch_historical(tenor, start_date, end_date)
+                {
+                    Ok(points) => {
+                        let count = points.len();
+                        self.euribor_curve = points.clone();
+                        self.popup_msg = Some(format!("Loaded {} Euribor {} points", count, tenor));
+                        points
+                    }
+                    Err(e) => {
+                        self.popup_msg = Some(format!("Euribor fetch failed: {}.", e));
+                        vec![]
+                    }
                 }
-                Err(_) => {
-                    self.popup_msg = Some("Euribor fetch failed. Using empty curve.".to_string());
-                    vec![]
-                }
-            }
-        } else {
-            self.euribor_curve.clone()
-        };
+            } else {
+                self.euribor_curve.clone()
+            };
 
         let upfront_cost = parse_optional(&self.upfront_cost)?;
         let upfront_percent = parse_optional(&self.upfront_percent)?;

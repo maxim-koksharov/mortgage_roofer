@@ -47,7 +47,7 @@ impl Default for GuiCalendarState {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Message {
     AmountChanged(String),
     TermChanged(String),
@@ -106,6 +106,13 @@ pub enum Message {
     StackedChartMouseLeft,
     BalanceChartMouseMoved(usize),
     BalanceChartMouseLeft,
+    AddEuriborManualPoint,
+    RemoveEuriborManualPoint(usize),
+    EuriborNewDateChanged(String),
+    EuriborNewRateChanged(String),
+    ToggleManualEuribor(bool),
+    SaveEuriborPoints,
+    LoadEuriborPoints,
 }
 
 #[derive(Debug, Clone)]
@@ -153,6 +160,10 @@ pub struct State {
     pub calendar_state: GuiCalendarState,
     pub x_axis_mode: XAxisMode,
     pub hovered_payment: Option<usize>,
+    pub euribor_manual_points: Vec<(String, String)>,
+    pub euribor_new_date: String,
+    pub euribor_new_rate: String,
+    pub use_manual_euribor: bool,
 }
 
 impl Default for State {
@@ -204,6 +215,10 @@ impl Default for State {
             calendar_state: GuiCalendarState::default(),
             x_axis_mode: XAxisMode::default(),
             hovered_payment: None,
+            euribor_manual_points: vec![],
+            euribor_new_date: String::new(),
+            euribor_new_rate: String::new(),
+            use_manual_euribor: false,
         }
     }
 }
@@ -365,6 +380,19 @@ pub fn update(state: &mut State, message: Message) {
         Message::StackedChartMouseLeft => state.hovered_payment = None,
         Message::BalanceChartMouseMoved(idx) => state.hovered_payment = Some(idx),
         Message::BalanceChartMouseLeft => state.hovered_payment = None,
+        Message::AddEuriborManualPoint => add_euribor_manual_point(state),
+        Message::RemoveEuriborManualPoint(idx) => {
+            if idx < state.euribor_manual_points.len() {
+                state.euribor_manual_points.remove(idx);
+                state.status = format!("Removed Euribor point #{}", idx + 1);
+                state.status_is_error = false;
+            }
+        }
+        Message::EuriborNewDateChanged(v) => state.euribor_new_date = v,
+        Message::EuriborNewRateChanged(v) => state.euribor_new_rate = v,
+        Message::ToggleManualEuribor(v) => state.use_manual_euribor = v,
+        Message::SaveEuriborPoints => save_euribor_points(state),
+        Message::LoadEuriborPoints => load_euribor_points(state),
     }
 }
 
@@ -395,6 +423,94 @@ fn add_prepayment(state: &mut State) {
         state.status = "Invalid date format (DD-MM-YYYY)".to_string();
     }
     state.status_is_error = true;
+}
+
+fn add_euribor_manual_point(state: &mut State) {
+    let date_str = state.euribor_new_date.clone();
+    let rate_str = state.euribor_new_rate.clone();
+
+    if rate_str.parse::<f64>().is_err() {
+        state.status = "Invalid rate".to_string();
+        state.status_is_error = true;
+        return;
+    }
+    let new_date = match chrono::NaiveDate::parse_from_str(&date_str, "%d-%m-%Y") {
+        Ok(d) => d,
+        Err(_) => {
+            state.status = "Invalid date format (DD-MM-YYYY)".to_string();
+            state.status_is_error = true;
+            return;
+        }
+    };
+
+    for (existing_date_str, _) in &state.euribor_manual_points {
+        if let Ok(existing_date) = chrono::NaiveDate::parse_from_str(existing_date_str, "%d-%m-%Y")
+            && new_date <= existing_date
+        {
+            state.status = "Dates must be in chronological order".to_string();
+            state.status_is_error = true;
+            return;
+        }
+    }
+
+    state.euribor_manual_points.push((date_str, rate_str));
+    state.euribor_new_date = String::new();
+    state.euribor_new_rate = String::new();
+    state.status = format!("Added Euribor point #{}", state.euribor_manual_points.len());
+    state.status_is_error = false;
+}
+
+fn save_euribor_points(state: &mut State) {
+    if state.euribor_manual_points.is_empty() {
+        state.status = "No Euribor points to save".to_string();
+        state.status_is_error = true;
+        return;
+    }
+    let json = serde_json::to_string_pretty(&state.euribor_manual_points).unwrap();
+    let path = "/tmp/euribor_points.json";
+    match std::fs::write(path, json) {
+        Ok(()) => {
+            state.status = format!(
+                "Saved {} Euribor points to {}",
+                state.euribor_manual_points.len(),
+                path
+            );
+            state.status_is_error = false;
+        }
+        Err(e) => {
+            state.status = format!("Save failed: {}", e);
+            state.status_is_error = true;
+        }
+    }
+}
+
+fn load_euribor_points(state: &mut State) {
+    let path = "/tmp/euribor_points.json";
+    match std::fs::read_to_string(path) {
+        Ok(json) => match serde_json::from_str::<Vec<(String, String)>>(&json) {
+            Ok(mut points) => {
+                points.sort_by(|a, b| {
+                    let da = chrono::NaiveDate::parse_from_str(&a.0, "%d-%m-%Y").ok();
+                    let db = chrono::NaiveDate::parse_from_str(&b.0, "%d-%m-%Y").ok();
+                    da.cmp(&db)
+                });
+                state.euribor_manual_points = points;
+                state.status = format!(
+                    "Loaded {} Euribor points",
+                    state.euribor_manual_points.len()
+                );
+                state.status_is_error = false;
+            }
+            Err(e) => {
+                state.status = format!("Parse failed: {}", e);
+                state.status_is_error = true;
+            }
+        },
+        Err(e) => {
+            state.status = format!("Read failed: {}", e);
+            state.status_is_error = true;
+        }
+    }
 }
 
 fn input_row<'a>(label: &'a str, content: Element<'a, Message>) -> Element<'a, Message> {
@@ -470,11 +586,15 @@ pub fn view(state: &State) -> Element<'_, Message> {
             view_loan_section(state),
             Rule::horizontal(1).into(),
             view_rate_section(state),
-            Rule::horizontal(1).into(),
-            view_prepay_section(state),
-            Rule::horizontal(1).into(),
-            view_actions_section(state),
         ];
+        if state.rate_mode == "Euribor" || state.rate_mode == "Mixed" {
+            children.push(Rule::horizontal(1).into());
+            children.push(view_euribor_manual_section(state));
+        }
+        children.push(Rule::horizontal(1).into());
+        children.push(view_prepay_section(state));
+        children.push(Rule::horizontal(1).into());
+        children.push(view_actions_section(state));
         if state.calendar_target.is_some() {
             children.push(Rule::horizontal(1).into());
             children.push(calendar_widget(&state.calendar_state));
@@ -758,6 +878,70 @@ fn view_actions_section(state: &State) -> Element<'_, Message> {
     .spacing(0)
     .padding(0)
     .into()
+}
+
+fn view_euribor_manual_section(state: &State) -> Element<'_, Message> {
+    let mut fields: Vec<Element<'_, Message>> = vec![section_header("Euribor History")];
+
+    fields.push(input_row(
+        "Use manual:",
+        checkbox("", state.use_manual_euribor)
+            .on_toggle(Message::ToggleManualEuribor)
+            .into(),
+    ));
+
+    for (i, (date, rate)) in state.euribor_manual_points.iter().enumerate() {
+        fields.push(
+            row![
+                text(format!("  #{}: {} {}%", i + 1, date, rate))
+                    .size(16)
+                    .width(Length::Fill),
+                button(" X")
+                    .padding(0)
+                    .on_press(Message::RemoveEuriborManualPoint(i)),
+            ]
+            .spacing(5)
+            .align_y(Alignment::Center)
+            .into(),
+        );
+    }
+
+    fields.push(input_row(
+        "Date:",
+        compact_input(
+            "DD-MM-YYYY",
+            &state.euribor_new_date,
+            Message::EuriborNewDateChanged,
+        ),
+    ));
+    fields.push(input_row(
+        "Rate:",
+        compact_input(
+            "2.5",
+            &state.euribor_new_rate,
+            Message::EuriborNewRateChanged,
+        ),
+    ));
+    fields.push(
+        button(" +Add ")
+            .padding(0)
+            .on_press(Message::AddEuriborManualPoint)
+            .into(),
+    );
+    fields.push(
+        row![
+            button(" Save ")
+                .padding(0)
+                .on_press(Message::SaveEuriborPoints),
+            button(" Load ")
+                .padding(0)
+                .on_press(Message::LoadEuriborPoints),
+        ]
+        .spacing(3)
+        .into(),
+    );
+
+    Column::from_vec(fields).spacing(0).padding(0).into()
 }
 
 fn view_reverse_section(state: &State) -> Element<'_, Message> {
@@ -1062,7 +1246,6 @@ fn view_tabs(state: &State) -> Element<'_, Message> {
         tab("Yearly", ViewTab::Yearly, state.active_tab),
         tab("Sensitivity", ViewTab::Sensitivity, state.active_tab),
         tab("Break-Even", ViewTab::BreakEven, state.active_tab),
-        tab("Reverse", ViewTab::ReverseCalc, state.active_tab),
     ]
     .spacing(3)
     .into()
@@ -1178,7 +1361,7 @@ fn view_sensitivity_tab(state: &State) -> Element<'_, Message> {
         return text("Calculate first to see sensitivity analysis").into();
     };
 
-    let deltas = vec![-2.0, -1.0, -0.5, 0.0, 0.5, 1.0, 2.0];
+    let deltas: Vec<f64> = (-15..=15).map(|i| i as f64 / 10.0).collect();
     let points = mortgage_core::sensitivity_analysis(params, &deltas);
     let header = row![
         text("Delta").width(Length::Fixed(60.0)),
@@ -1445,19 +1628,39 @@ fn calculate(state: &mut State) {
         } else {
             start_date
         };
-        match state.euribor_cache.get_or_fetch(tenor) {
-            Ok(rate) => {
-                state.status = format!("Euribor {}: {:.3}%", tenor, rate);
-                state.status_is_error = false;
-                vec![EuriborPoint {
-                    date_from: curve_start,
-                    rate,
-                }]
-            }
-            Err(e) => {
-                state.status = format!("Euribor fetch failed: {}. Enter rate manually.", e);
-                state.status_is_error = true;
-                return;
+        let end_date = start_date
+            .checked_add_months(chrono::Months::new(term_years * 12))
+            .unwrap_or(start_date);
+        if state.use_manual_euribor && !state.euribor_manual_points.is_empty() {
+            state
+                .euribor_manual_points
+                .iter()
+                .filter_map(|(d, r)| {
+                    let date = chrono::NaiveDate::parse_from_str(d, "%d-%m-%Y").ok()?;
+                    let rate = r.parse::<f64>().ok()?;
+                    Some(EuriborPoint {
+                        date_from: date,
+                        rate,
+                    })
+                })
+                .collect()
+        } else {
+            state.status = format!("Loading Euribor {} historical data...", tenor);
+            state.status_is_error = false;
+            match state
+                .euribor_cache
+                .fetch_historical(tenor, curve_start, end_date)
+            {
+                Ok(points) => {
+                    state.status = format!("Loaded {} Euribor {} points", points.len(), tenor);
+                    state.status_is_error = false;
+                    points
+                }
+                Err(e) => {
+                    state.status = format!("Euribor fetch failed: {}.", e);
+                    state.status_is_error = true;
+                    return;
+                }
             }
         }
     } else {
@@ -1890,8 +2093,8 @@ impl StackedChart<'_> {
 
     fn chart_area(&self, bounds: iced::Rectangle) -> iced::Rectangle {
         iced::Rectangle {
-            x: bounds.x + Self::ML,
-            y: bounds.y + Self::MT,
+            x: Self::ML,
+            y: Self::MT,
             width: (bounds.width - Self::ML - Self::MR).max(1.0),
             height: (bounds.height - Self::MT - Self::MB).max(1.0),
         }
@@ -2008,11 +2211,10 @@ impl Program<Message> for StackedChart<'_> {
         });
 
         // Bars
-        let total_w = chart.width;
-        let bar_w = total_w / n as f32 * 0.8;
-        let gap = total_w / n as f32 * 0.2;
+        let step = chart.width / (n - 1).max(1) as f32;
+        let bar_w = step * 0.8;
         for (i, p) in self.payments.iter().enumerate() {
-            let bx = chart.x + i as f32 * (bar_w + gap) + gap / 2.0;
+            let bx = chart.x + i as f32 * step - bar_w / 2.0;
             let ph = (p.principal as f32 / max_y) * chart.height;
             let ih = (p.interest as f32 / max_y) * chart.height;
             if ph > 0.0 {
@@ -2035,7 +2237,7 @@ impl Program<Message> for StackedChart<'_> {
         if let Some(idx) = self.hovered
             && idx < n
         {
-            let bx = chart.x + idx as f32 * (bar_w + gap) + gap / 2.0;
+            let bx = chart.x + idx as f32 * step - bar_w / 2.0;
             frame.fill_rectangle(
                 Point::new(bx, chart.y),
                 Size::new(bar_w, chart.height),
@@ -2094,7 +2296,7 @@ impl Program<Message> for StackedChart<'_> {
             && idx < n
         {
             let p = &self.payments[idx];
-            let bx = chart.x + idx as f32 * (bar_w + gap) + gap / 2.0;
+            let bx = chart.x + idx as f32 * step - bar_w / 2.0;
             let tx = (bx + bar_w / 2.0 - 70.0)
                 .max(chart.x + 5.0)
                 .min(chart.x + chart.width - 150.0);
@@ -2161,14 +2363,16 @@ impl Program<Message> for StackedChart<'_> {
             canvas::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
                 if let Some(pos) = cursor.position() {
                     let chart = self.chart_area(bounds);
-                    if pos.x >= chart.x
-                        && pos.x <= chart.x + chart.width
-                        && pos.y >= chart.y
-                        && pos.y <= chart.y + chart.height
+                    let cx = bounds.x + chart.x;
+                    let cy = bounds.y + chart.y;
+                    if pos.x >= cx
+                        && pos.x <= cx + chart.width
+                        && pos.y >= cy
+                        && pos.y <= cy + chart.height
                     {
                         let n = self.payments.len();
                         if n > 0 {
-                            let idx = ((pos.x - chart.x) / chart.width * n as f32) as usize;
+                            let idx = ((pos.x - cx) / chart.width * n as f32) as usize;
                             let idx = idx.min(n - 1);
                             return (
                                 canvas::event::Status::Captured,
@@ -2205,8 +2409,8 @@ impl BalanceChart<'_> {
 
     fn chart_area(&self, bounds: iced::Rectangle) -> iced::Rectangle {
         iced::Rectangle {
-            x: bounds.x + Self::ML,
-            y: bounds.y + Self::MT,
+            x: Self::ML,
+            y: Self::MT,
             width: (bounds.width - Self::ML - Self::MR).max(1.0),
             height: (bounds.height - Self::MT - Self::MB).max(1.0),
         }
@@ -2460,14 +2664,16 @@ impl Program<Message> for BalanceChart<'_> {
             canvas::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
                 if let Some(pos) = cursor.position() {
                     let chart = self.chart_area(bounds);
-                    if pos.x >= chart.x
-                        && pos.x <= chart.x + chart.width
-                        && pos.y >= chart.y
-                        && pos.y <= chart.y + chart.height
+                    let cx = bounds.x + chart.x;
+                    let cy = bounds.y + chart.y;
+                    if pos.x >= cx
+                        && pos.x <= cx + chart.width
+                        && pos.y >= cy
+                        && pos.y <= cy + chart.height
                     {
                         let n = self.payments.len();
                         if n > 0 {
-                            let idx = ((pos.x - chart.x) / chart.width * n as f32) as usize;
+                            let idx = ((pos.x - cx) / chart.width * n as f32) as usize;
                             let idx = idx.min(n - 1);
                             return (
                                 canvas::event::Status::Captured,
@@ -2492,4 +2698,413 @@ impl Program<Message> for BalanceChart<'_> {
 
 fn parse_tenor(s: &str) -> EuriborTenor {
     s.parse().unwrap_or(EuriborTenor::SixMonths)
+}
+
+#[cfg(test)]
+mod chart_tests {
+    use super::*;
+    use iced::mouse;
+    use iced::Rectangle;
+    use mortgage_core::models::Payment;
+
+    fn dummy_payments(n: usize) -> Vec<Payment> {
+        (0..n)
+            .map(|i| Payment {
+                payment: 1000.0,
+                date: chrono::NaiveDate::from_ymd_opt(2025, 1, 1)
+                    .unwrap()
+                    .checked_add_months(chrono::Months::new(i as u32))
+                    .unwrap(),
+                principal: 500.0,
+                interest: 500.0,
+                remaining_balance: 100000.0 - i as f64 * 500.0,
+                applied_rate: 5.0,
+            })
+            .collect()
+    }
+
+    fn stacked_chart(payments: &[Payment]) -> StackedChart<'_> {
+        StackedChart {
+            payments,
+            x_axis_mode: XAxisMode::PaymentNumber,
+            hovered: None,
+        }
+    }
+
+    fn balance_chart(payments: &[Payment]) -> BalanceChart<'_> {
+        BalanceChart {
+            payments,
+            x_axis_mode: XAxisMode::PaymentNumber,
+            hovered: None,
+        }
+    }
+
+    // ── chart_area tests ───────────────────────────────────────
+
+    #[test]
+    fn chart_area_origin_at_zero() {
+        let bounds = Rectangle {
+            x: 0.0,
+            y: 0.0,
+            width: 800.0,
+            height: 400.0,
+        };
+        let chart = stacked_chart(&[]).chart_area(bounds);
+        assert_eq!(chart.x, StackedChart::ML);
+        assert_eq!(chart.y, StackedChart::MT);
+        assert_eq!(chart.width, 800.0 - StackedChart::ML - StackedChart::MR);
+        assert_eq!(chart.height, 400.0 - StackedChart::MT - StackedChart::MB);
+    }
+
+    #[test]
+    fn chart_area_independent_of_bounds_origin() {
+        let bounds = Rectangle {
+            x: 300.0,
+            y: 100.0,
+            width: 800.0,
+            height: 400.0,
+        };
+        let chart = stacked_chart(&[]).chart_area(bounds);
+        assert_eq!(chart.x, StackedChart::ML);
+        assert_eq!(chart.y, StackedChart::MT);
+    }
+
+    #[test]
+    fn chart_area_clamps_minimum_width() {
+        let bounds = Rectangle {
+            x: 0.0,
+            y: 0.0,
+            width: StackedChart::ML + StackedChart::MR - 1.0,
+            height: 400.0,
+        };
+        let chart = stacked_chart(&[]).chart_area(bounds);
+        assert_eq!(chart.width, 1.0);
+    }
+
+    #[test]
+    fn chart_area_clamps_minimum_height() {
+        let bounds = Rectangle {
+            x: 0.0,
+            y: 0.0,
+            width: 800.0,
+            height: StackedChart::MT + StackedChart::MB - 1.0,
+        };
+        let chart = stacked_chart(&[]).chart_area(bounds);
+        assert_eq!(chart.height, 1.0);
+    }
+
+    #[test]
+    fn chart_area_balance_chart() {
+        let bounds = Rectangle {
+            x: 150.0,
+            y: 50.0,
+            width: 600.0,
+            height: 300.0,
+        };
+        let chart = balance_chart(&[]).chart_area(bounds);
+        assert_eq!(chart.x, BalanceChart::ML);
+        assert_eq!(chart.y, BalanceChart::MT);
+        assert_eq!(chart.width, 600.0 - BalanceChart::ML - BalanceChart::MR);
+        assert_eq!(chart.height, 300.0 - BalanceChart::MT - BalanceChart::MB);
+    }
+
+    // ── StackedChart::update hit-test ───────────────────────────
+
+    #[test]
+    fn stacked_mouse_inside_returns_moved() {
+        let payments = dummy_payments(10);
+        let chart = stacked_chart(&payments);
+        let mut state = ();
+        let bounds = Rectangle {
+            x: 100.0,
+            y: 50.0,
+            width: 800.0,
+            height: 400.0,
+        };
+        let local = chart.chart_area(bounds);
+        let cx = bounds.x + local.x + local.width / 2.0;
+        let cy = bounds.y + local.y + local.height / 2.0;
+        let event = canvas::Event::Mouse(mouse::Event::CursorMoved {
+            position: Point::new(cx, cy),
+        });
+        let cursor = mouse::Cursor::Available(Point::new(cx, cy));
+        let (status, msg) = chart.update(&mut state, event, bounds, cursor);
+        assert_eq!(status, canvas::event::Status::Captured);
+        assert!(matches!(msg, Some(Message::StackedChartMouseMoved(_))));
+    }
+
+    #[test]
+    fn stacked_mouse_left_of_chart_returns_left() {
+        let payments = dummy_payments(10);
+        let chart = stacked_chart(&payments);
+        let mut state = ();
+        let bounds = Rectangle {
+            x: 100.0,
+            y: 50.0,
+            width: 800.0,
+            height: 400.0,
+        };
+        let local = chart.chart_area(bounds);
+        let cx = bounds.x + local.x - 10.0;
+        let cy = bounds.y + local.y + local.height / 2.0;
+        let event = canvas::Event::Mouse(mouse::Event::CursorMoved {
+            position: Point::new(cx, cy),
+        });
+        let cursor = mouse::Cursor::Available(Point::new(cx, cy));
+        let (status, msg) = chart.update(&mut state, event, bounds, cursor);
+        assert_eq!(status, canvas::event::Status::Captured);
+        assert!(matches!(msg, Some(Message::StackedChartMouseLeft)));
+    }
+
+    #[test]
+    fn stacked_mouse_above_chart_returns_left() {
+        let payments = dummy_payments(10);
+        let chart = stacked_chart(&payments);
+        let mut state = ();
+        let bounds = Rectangle {
+            x: 100.0,
+            y: 50.0,
+            width: 800.0,
+            height: 400.0,
+        };
+        let local = chart.chart_area(bounds);
+        let cx = bounds.x + local.x + local.width / 2.0;
+        let cy = bounds.y + local.y - 10.0;
+        let event = canvas::Event::Mouse(mouse::Event::CursorMoved {
+            position: Point::new(cx, cy),
+        });
+        let cursor = mouse::Cursor::Available(Point::new(cx, cy));
+        let (status, msg) = chart.update(&mut state, event, bounds, cursor);
+        assert_eq!(status, canvas::event::Status::Captured);
+        assert!(matches!(msg, Some(Message::StackedChartMouseLeft)));
+    }
+
+    #[test]
+    fn stacked_mouse_cursor_left_event() {
+        let payments = dummy_payments(10);
+        let chart = stacked_chart(&payments);
+        let mut state = ();
+        let bounds = Rectangle::new(Point::ORIGIN, Size::new(800.0, 400.0));
+        let event = canvas::Event::Mouse(mouse::Event::CursorLeft);
+        let cursor = mouse::Cursor::Unavailable;
+        let (status, msg) = chart.update(&mut state, event, bounds, cursor);
+        assert_eq!(status, canvas::event::Status::Captured);
+        assert!(matches!(msg, Some(Message::StackedChartMouseLeft)));
+    }
+
+    #[test]
+    fn stacked_mouse_index_at_left_edge() {
+        let payments = dummy_payments(10);
+        let chart = stacked_chart(&payments);
+        let mut state = ();
+        let bounds = Rectangle {
+            x: 100.0,
+            y: 50.0,
+            width: 800.0,
+            height: 400.0,
+        };
+        let local = chart.chart_area(bounds);
+        let cx = bounds.x + local.x + 1.0;
+        let cy = bounds.y + local.y + 1.0;
+        let event = canvas::Event::Mouse(mouse::Event::CursorMoved {
+            position: Point::new(cx, cy),
+        });
+        let cursor = mouse::Cursor::Available(Point::new(cx, cy));
+        let (_, msg) = chart.update(&mut state, event, bounds, cursor);
+        assert_eq!(msg, Some(Message::StackedChartMouseMoved(0)));
+    }
+
+    #[test]
+    fn stacked_mouse_index_at_right_edge() {
+        let payments = dummy_payments(10);
+        let chart = stacked_chart(&payments);
+        let mut state = ();
+        let bounds = Rectangle {
+            x: 100.0,
+            y: 50.0,
+            width: 800.0,
+            height: 400.0,
+        };
+        let local = chart.chart_area(bounds);
+        let cx = bounds.x + local.x + local.width - 1.0;
+        let cy = bounds.y + local.y + 1.0;
+        let event = canvas::Event::Mouse(mouse::Event::CursorMoved {
+            position: Point::new(cx, cy),
+        });
+        let cursor = mouse::Cursor::Available(Point::new(cx, cy));
+        let (_, msg) = chart.update(&mut state, event, bounds, cursor);
+        assert_eq!(msg, Some(Message::StackedChartMouseMoved(9)));
+    }
+
+    // ── BalanceChart::update hit-test ───────────────────────────
+
+    #[test]
+    fn balance_mouse_inside_returns_moved() {
+        let payments = dummy_payments(10);
+        let chart = balance_chart(&payments);
+        let mut state = ();
+        let bounds = Rectangle {
+            x: 120.0,
+            y: 60.0,
+            width: 700.0,
+            height: 350.0,
+        };
+        let local = chart.chart_area(bounds);
+        let cx = bounds.x + local.x + local.width / 2.0;
+        let cy = bounds.y + local.y + local.height / 2.0;
+        let event = canvas::Event::Mouse(mouse::Event::CursorMoved {
+            position: Point::new(cx, cy),
+        });
+        let cursor = mouse::Cursor::Available(Point::new(cx, cy));
+        let (status, msg) = chart.update(&mut state, event, bounds, cursor);
+        assert_eq!(status, canvas::event::Status::Captured);
+        assert!(matches!(msg, Some(Message::BalanceChartMouseMoved(_))));
+    }
+
+    #[test]
+    fn balance_mouse_left_of_chart_returns_left() {
+        let payments = dummy_payments(10);
+        let chart = balance_chart(&payments);
+        let mut state = ();
+        let bounds = Rectangle {
+            x: 120.0,
+            y: 60.0,
+            width: 700.0,
+            height: 350.0,
+        };
+        let local = chart.chart_area(bounds);
+        let cx = bounds.x + local.x - 10.0;
+        let cy = bounds.y + local.y + 10.0;
+        let event = canvas::Event::Mouse(mouse::Event::CursorMoved {
+            position: Point::new(cx, cy),
+        });
+        let cursor = mouse::Cursor::Available(Point::new(cx, cy));
+        let (status, msg) = chart.update(&mut state, event, bounds, cursor);
+        assert_eq!(status, canvas::event::Status::Captured);
+        assert!(matches!(msg, Some(Message::BalanceChartMouseLeft)));
+    }
+
+    #[test]
+    fn balance_mouse_cursor_left_event() {
+        let payments = dummy_payments(10);
+        let chart = balance_chart(&payments);
+        let mut state = ();
+        let bounds = Rectangle::new(Point::ORIGIN, Size::new(800.0, 400.0));
+        let event = canvas::Event::Mouse(mouse::Event::CursorLeft);
+        let cursor = mouse::Cursor::Unavailable;
+        let (status, msg) = chart.update(&mut state, event, bounds, cursor);
+        assert_eq!(status, canvas::event::Status::Captured);
+        assert!(matches!(msg, Some(Message::BalanceChartMouseLeft)));
+    }
+
+    #[test]
+    fn balance_mouse_index_edges() {
+        let payments = dummy_payments(10);
+        let chart = balance_chart(&payments);
+        let mut state = ();
+        let bounds = Rectangle {
+            x: 100.0,
+            y: 50.0,
+            width: 800.0,
+            height: 400.0,
+        };
+        let local = chart.chart_area(bounds);
+
+        let cx_left = bounds.x + local.x + 1.0;
+        let cy = bounds.y + local.y + 1.0;
+        let event = canvas::Event::Mouse(mouse::Event::CursorMoved {
+            position: Point::new(cx_left, cy),
+        });
+        let cursor = mouse::Cursor::Available(Point::new(cx_left, cy));
+        let (_, msg) = chart.update(&mut state, event, bounds, cursor);
+        assert_eq!(msg, Some(Message::BalanceChartMouseMoved(0)));
+
+        let cx_right = bounds.x + local.x + local.width - 1.0;
+        let event = canvas::Event::Mouse(mouse::Event::CursorMoved {
+            position: Point::new(cx_right, cy),
+        });
+        let cursor = mouse::Cursor::Available(Point::new(cx_right, cy));
+        let (_, msg) = chart.update(&mut state, event, bounds, cursor);
+        assert_eq!(msg, Some(Message::BalanceChartMouseMoved(9)));
+    }
+
+    // ── Edge cases ──────────────────────────────────────────────
+
+    #[test]
+    fn stacked_empty_payments_no_panic() {
+        let payments: Vec<Payment> = vec![];
+        let chart = stacked_chart(&payments);
+        let mut state = ();
+        let bounds = Rectangle::new(Point::ORIGIN, Size::new(800.0, 400.0));
+        let event = canvas::Event::Mouse(mouse::Event::CursorMoved {
+            position: Point::new(100.0, 100.0),
+        });
+        let cursor = mouse::Cursor::Available(Point::new(100.0, 100.0));
+        let (status, msg) = chart.update(&mut state, event, bounds, cursor);
+        assert_eq!(status, canvas::event::Status::Captured);
+        assert!(matches!(msg, Some(Message::StackedChartMouseLeft)));
+    }
+
+    #[test]
+    fn balance_empty_payments_no_panic() {
+        let payments: Vec<Payment> = vec![];
+        let chart = balance_chart(&payments);
+        let mut state = ();
+        let bounds = Rectangle::new(Point::ORIGIN, Size::new(800.0, 400.0));
+        let event = canvas::Event::Mouse(mouse::Event::CursorMoved {
+            position: Point::new(100.0, 100.0),
+        });
+        let cursor = mouse::Cursor::Available(Point::new(100.0, 100.0));
+        let (status, msg) = chart.update(&mut state, event, bounds, cursor);
+        assert_eq!(status, canvas::event::Status::Captured);
+        assert!(matches!(msg, Some(Message::BalanceChartMouseLeft)));
+    }
+
+    #[test]
+    fn chart_area_both_charts_have_same_margins() {
+        assert_eq!(StackedChart::ML, BalanceChart::ML);
+        assert_eq!(StackedChart::MR, BalanceChart::MR);
+        assert_eq!(StackedChart::MT, BalanceChart::MT);
+        assert_eq!(StackedChart::MB, BalanceChart::MB);
+    }
+
+    #[test]
+    fn single_payment_hit_test() {
+        let payments = dummy_payments(1);
+        let chart = stacked_chart(&payments);
+        let mut state = ();
+        let bounds = Rectangle {
+            x: 50.0,
+            y: 50.0,
+            width: 600.0,
+            height: 300.0,
+        };
+        let local = chart.chart_area(bounds);
+        let cx = bounds.x + local.x + local.width / 2.0;
+        let cy = bounds.y + local.y + local.height / 2.0;
+        let event = canvas::Event::Mouse(mouse::Event::CursorMoved {
+            position: Point::new(cx, cy),
+        });
+        let cursor = mouse::Cursor::Available(Point::new(cx, cy));
+        let (_, msg) = chart.update(&mut state, event, bounds, cursor);
+        assert_eq!(msg, Some(Message::StackedChartMouseMoved(0)));
+    }
+
+    // ── Ignored events ──────────────────────────────────────────
+
+    #[test]
+    fn non_mouse_event_is_ignored() {
+        let payments = dummy_payments(5);
+        let chart = stacked_chart(&payments);
+        let mut state = ();
+        let bounds = Rectangle::new(Point::ORIGIN, Size::new(800.0, 400.0));
+        let event = canvas::Event::Touch(iced::touch::Event::FingerMoved {
+            id: iced::touch::Finger(0),
+            position: Point::new(100.0, 100.0),
+        });
+        let cursor = mouse::Cursor::Unavailable;
+        let (status, msg) = chart.update(&mut state, event, bounds, cursor);
+        assert_eq!(status, canvas::event::Status::Ignored);
+        assert_eq!(msg, None);
+    }
 }
