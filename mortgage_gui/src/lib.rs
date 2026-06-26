@@ -1,7 +1,7 @@
 pub mod chart;
 
 use iced::{
-    Alignment, Color, Element, Length, Pixels, Point, Size, Theme,
+    Alignment, Color, Element, Length, Pixels, Point, Size, Task, Theme,
     widget::{
         Column, Rule, button, checkbox, column, container, pick_list, row, scrollable, text,
         text_input,
@@ -113,6 +113,8 @@ pub enum Message {
     ToggleManualEuribor(bool),
     SaveEuriborPoints,
     LoadEuriborPoints,
+    FetchEuribor,
+    EuriborLoaded(Result<Vec<EuriborPoint>, String>),
 }
 
 #[derive(Debug, Clone)]
@@ -164,6 +166,7 @@ pub struct State {
     pub euribor_new_date: String,
     pub euribor_new_rate: String,
     pub use_manual_euribor: bool,
+    pub pending_calc: Option<LoanParams>,
 }
 
 impl Default for State {
@@ -219,6 +222,7 @@ impl Default for State {
             euribor_new_date: String::new(),
             euribor_new_rate: String::new(),
             use_manual_euribor: false,
+            pending_calc: None,
         }
     }
 }
@@ -251,82 +255,327 @@ pub enum XAxisMode {
     Date,
 }
 
-pub fn update(state: &mut State, message: Message) {
+pub fn update(state: &mut State, message: Message) -> Task<Message> {
     match message {
-        Message::AmountChanged(v) => state.amount = v,
-        Message::TermChanged(v) => state.term = v,
-        Message::StartDateChanged(v) => state.start_date = filter_date_input(&v),
-        Message::RateChanged(v) => state.rate = v,
-        Message::SpreadChanged(v) => state.spread = v,
-        Message::CurrencyChanged(v) => state.currency = v,
-        Message::PaymentTypeChanged(v) => state.payment_type = v,
-        Message::RateModeChanged(v) => state.rate_mode = v,
-        Message::EuriborTenorChanged(v) => state.euribor_tenor = v,
-        Message::EuriborSpreadChanged(v) => state.euribor_spread = v,
-        Message::MixedFixYearsChanged(v) => state.mixed_fix_years = v,
-        Message::MixedFixRateChanged(v) => state.mixed_fix_rate = v,
-        Message::MixedFixSpreadChanged(v) => state.mixed_fix_spread = v,
-        Message::MixedEuriborTenorChanged(v) => state.mixed_euribor_tenor = v,
-        Message::MixedEuriborSpreadChanged(v) => state.mixed_euribor_spread = v,
-        Message::SameSpreadToggled(v) => state.same_spread = v,
-        Message::PrepaymentDateChanged(v) => state.prepayment_date = filter_date_input(&v),
-        Message::PrepaymentAmountChanged(v) => state.prepayment_amount = v,
-        Message::PrepaymentEffectChanged(v) => state.prepayment_effect = v,
-        Message::UpfrontCostChanged(v) => state.upfront_cost = v,
-        Message::UpfrontPercentChanged(v) => state.upfront_percent = v,
-        Message::DownPaymentChanged(v) => state.down_payment = v,
-        Message::AddPrepayment => add_prepayment(state),
+        Message::AmountChanged(v) => {
+            state.amount = v;
+            Task::none()
+        }
+        Message::TermChanged(v) => {
+            state.term = v;
+            Task::none()
+        }
+        Message::StartDateChanged(v) => {
+            state.start_date = filter_date_input(&v);
+            Task::none()
+        }
+        Message::RateChanged(v) => {
+            state.rate = v;
+            Task::none()
+        }
+        Message::SpreadChanged(v) => {
+            state.spread = v;
+            Task::none()
+        }
+        Message::CurrencyChanged(v) => {
+            state.currency = v;
+            Task::none()
+        }
+        Message::PaymentTypeChanged(v) => {
+            state.payment_type = v;
+            Task::none()
+        }
+        Message::RateModeChanged(v) => {
+            state.rate_mode = v;
+            Task::none()
+        }
+        Message::EuriborTenorChanged(v) => {
+            state.euribor_tenor = v;
+            Task::none()
+        }
+        Message::EuriborSpreadChanged(v) => {
+            state.euribor_spread = v;
+            Task::none()
+        }
+        Message::MixedFixYearsChanged(v) => {
+            state.mixed_fix_years = v;
+            Task::none()
+        }
+        Message::MixedFixRateChanged(v) => {
+            state.mixed_fix_rate = v;
+            Task::none()
+        }
+        Message::MixedFixSpreadChanged(v) => {
+            state.mixed_fix_spread = v;
+            Task::none()
+        }
+        Message::MixedEuriborTenorChanged(v) => {
+            state.mixed_euribor_tenor = v;
+            Task::none()
+        }
+        Message::MixedEuriborSpreadChanged(v) => {
+            state.mixed_euribor_spread = v;
+            Task::none()
+        }
+        Message::SameSpreadToggled(v) => {
+            state.same_spread = v;
+            Task::none()
+        }
+        Message::PrepaymentDateChanged(v) => {
+            state.prepayment_date = filter_date_input(&v);
+            Task::none()
+        }
+        Message::PrepaymentAmountChanged(v) => {
+            state.prepayment_amount = v;
+            Task::none()
+        }
+        Message::PrepaymentEffectChanged(v) => {
+            state.prepayment_effect = v;
+            Task::none()
+        }
+        Message::UpfrontCostChanged(v) => {
+            state.upfront_cost = v;
+            Task::none()
+        }
+        Message::UpfrontPercentChanged(v) => {
+            state.upfront_percent = v;
+            Task::none()
+        }
+        Message::DownPaymentChanged(v) => {
+            state.down_payment = v;
+            Task::none()
+        }
+        Message::AddPrepayment => {
+            add_prepayment(state);
+            Task::none()
+        }
         Message::RemovePrepayment(idx) => {
             if idx < state.prepayments.len() {
                 state.prepayments.remove(idx);
                 state.status = format!("Removed prepayment. {} remaining", state.prepayments.len());
                 state.status_is_error = false;
             }
+            Task::none()
         }
-        Message::Calculate => calculate(state),
-        Message::ExportCsv => export_csv(state),
-        Message::ExportPdf => export_pdf(state),
+        Message::Calculate => {
+            let needs_euribor = state.rate_mode == "Euribor" || state.rate_mode == "Mixed";
+            let has_manual = state.use_manual_euribor && !state.euribor_manual_points.is_empty();
+
+            if needs_euribor && !has_manual {
+                let amount = match state.amount.parse::<f64>() {
+                    Ok(v) => v,
+                    Err(_) => {
+                        state.status = "Invalid amount".to_string();
+                        state.status_is_error = true;
+                        return Task::none();
+                    }
+                };
+                let term_years = match state.term.parse::<u32>() {
+                    Ok(v) => v,
+                    Err(_) => {
+                        state.status = "Invalid term".to_string();
+                        state.status_is_error = true;
+                        return Task::none();
+                    }
+                };
+                let start_date =
+                    match chrono::NaiveDate::parse_from_str(&state.start_date, "%d-%m-%Y") {
+                        Ok(d) => d,
+                        Err(_) => {
+                            state.status = "Invalid start date (DD-MM-YYYY)".to_string();
+                            state.status_is_error = true;
+                            return Task::none();
+                        }
+                    };
+                let currency = if state.currency == "USD" {
+                    Currency::Usd
+                } else {
+                    Currency::Eur
+                };
+                let payment_type = if state.payment_type == "Diff" {
+                    PaymentType::Diff
+                } else {
+                    PaymentType::Annuity
+                };
+                let rate_mode = match state.rate_mode.as_str() {
+                    "Fix" => RateMode::Fix {
+                        rate: state.rate.parse::<f64>().unwrap_or(3.6),
+                        spread: state.spread.parse::<f64>().unwrap_or(0.0),
+                    },
+                    "Euribor" => RateMode::Euribor {
+                        tenor: parse_tenor(&state.euribor_tenor),
+                        spread: state.euribor_spread.parse::<f64>().unwrap_or(1.0),
+                    },
+                    "Mixed" => RateMode::Mixed {
+                        fix_years: state.mixed_fix_years.parse::<f64>().unwrap_or(2.0),
+                        fix_rate: state.mixed_fix_rate.parse::<f64>().unwrap_or(3.0),
+                        fix_spread: state.mixed_fix_spread.parse::<f64>().unwrap_or(1.0),
+                        euribor_tenor: parse_tenor(&state.mixed_euribor_tenor),
+                        euribor_spread: if state.same_spread {
+                            state.mixed_fix_spread.parse::<f64>().unwrap_or(1.0)
+                        } else {
+                            state.mixed_euribor_spread.parse::<f64>().unwrap_or(1.5)
+                        },
+                    },
+                    _ => RateMode::Fix {
+                        rate: 3.6,
+                        spread: 0.0,
+                    },
+                };
+
+                let tenor = if state.rate_mode == "Mixed" {
+                    parse_tenor(&state.mixed_euribor_tenor)
+                } else {
+                    parse_tenor(&state.euribor_tenor)
+                };
+                let curve_start = if state.rate_mode == "Mixed" {
+                    let fix_years = state.mixed_fix_years.parse::<f64>().unwrap_or(2.0);
+                    start_date
+                        .checked_add_months(chrono::Months::new((fix_years * 12.0).round() as u32))
+                        .unwrap_or(start_date)
+                } else {
+                    start_date
+                };
+                let today = chrono::Local::now().date_naive();
+                let ecb_end = today;
+                let ecb_start = curve_start.min(
+                    today
+                        .checked_sub_months(chrono::Months::new(3))
+                        .unwrap_or(today),
+                );
+
+                let params = LoanParams {
+                    amount,
+                    term_years,
+                    payment_type,
+                    currency,
+                    start_date,
+                    rate_mode,
+                    same_spread: state.same_spread,
+                    euribor_curve: vec![],
+                    prepayments: state.prepayments.clone(),
+                    upfront_cost: state.upfront_cost.parse::<f64>().ok().filter(|&v| v != 0.0),
+                    upfront_percent: state
+                        .upfront_percent
+                        .parse::<f64>()
+                        .ok()
+                        .filter(|&v| v != 0.0),
+                    down_payment: state.down_payment.parse::<f64>().ok().filter(|&v| v != 0.0),
+                };
+
+                state.pending_calc = Some(params);
+                state.status = format!("Loading Euribor {} historical data...", tenor);
+                state.status_is_error = false;
+
+                let mut cache = state.euribor_cache.clone();
+                Task::perform(
+                    async move {
+                        cache
+                            .fetch_historical(tenor, ecb_start, ecb_end)
+                            .map_err(|e| e.to_string())
+                    },
+                    Message::EuriborLoaded,
+                )
+            } else {
+                calculate(state);
+                Task::none()
+            }
+        }
+        Message::ExportCsv => {
+            export_csv(state);
+            Task::none()
+        }
+        Message::ExportPdf => {
+            export_pdf(state);
+            Task::none()
+        }
         Message::ShowTable => {
             state.active_tab = ViewTab::Table;
             state.hovered_payment = None;
+            Task::none()
         }
         Message::ShowChart => {
             state.active_tab = ViewTab::Chart;
             state.hovered_payment = None;
+            Task::none()
         }
         Message::ShowBalanceChart => {
             state.active_tab = ViewTab::BalanceChart;
             state.hovered_payment = None;
+            Task::none()
         }
         Message::ShowYearly => {
             state.active_tab = ViewTab::Yearly;
             state.hovered_payment = None;
+            Task::none()
         }
         Message::ShowSensitivity => {
             state.active_tab = ViewTab::Sensitivity;
             state.hovered_payment = None;
+            Task::none()
         }
         Message::ShowBreakEven => {
             state.active_tab = ViewTab::BreakEven;
             state.hovered_payment = None;
+            Task::none()
         }
-        Message::RentChanged(v) => state.rent = v,
-        Message::ReverseTargetChanged(v) => state.reverse_target_payment = v,
-        Message::ReversePaymentTypeChanged(v) => state.reverse_payment_type = v,
-        Message::ReverseRateModeChanged(v) => state.reverse_rate_mode = v,
-        Message::ReverseFixRateChanged(v) => state.reverse_fix_rate = v,
-        Message::ReverseFixSpreadChanged(v) => state.reverse_fix_spread = v,
-        Message::ReverseEuriborTenorChanged(v) => state.reverse_euribor_tenor = v,
-        Message::ReverseEuriborSpreadChanged(v) => state.reverse_euribor_spread = v,
-        Message::ReverseExtraChanged(v) => state.reverse_extra_monthly = v,
-        Message::ReverseCalculate => reverse_calculate(state),
-        Message::ShowReverseCalc => state.active_tab = ViewTab::ReverseCalc,
+        Message::RentChanged(v) => {
+            state.rent = v;
+            Task::none()
+        }
+        Message::ReverseTargetChanged(v) => {
+            state.reverse_target_payment = v;
+            Task::none()
+        }
+        Message::ReversePaymentTypeChanged(v) => {
+            state.reverse_payment_type = v;
+            Task::none()
+        }
+        Message::ReverseRateModeChanged(v) => {
+            state.reverse_rate_mode = v;
+            Task::none()
+        }
+        Message::ReverseFixRateChanged(v) => {
+            state.reverse_fix_rate = v;
+            Task::none()
+        }
+        Message::ReverseFixSpreadChanged(v) => {
+            state.reverse_fix_spread = v;
+            Task::none()
+        }
+        Message::ReverseEuriborTenorChanged(v) => {
+            state.reverse_euribor_tenor = v;
+            Task::none()
+        }
+        Message::ReverseEuriborSpreadChanged(v) => {
+            state.reverse_euribor_spread = v;
+            Task::none()
+        }
+        Message::ReverseExtraChanged(v) => {
+            state.reverse_extra_monthly = v;
+            Task::none()
+        }
+        Message::ReverseCalculate => {
+            reverse_calculate(state);
+            Task::none()
+        }
+        Message::ShowReverseCalc => {
+            state.active_tab = ViewTab::ReverseCalc;
+            Task::none()
+        }
         Message::ShowCalculator => {
             state.active_tab = ViewTab::Table;
             state.hovered_payment = None;
+            Task::none()
         }
-        Message::SaveSession => save_session_gui(state),
-        Message::LoadSession => load_session_gui(state),
+        Message::SaveSession => {
+            save_session_gui(state);
+            Task::none()
+        }
+        Message::LoadSession => {
+            load_session_gui(state);
+            Task::none()
+        }
         Message::OpenCalendar(target) => {
             state.calendar_target = Some(target);
             let date_str = match target {
@@ -341,8 +590,12 @@ pub fn update(state: &mut State, message: Message) {
                     day: parsed.day(),
                 };
             }
+            Task::none()
         }
-        Message::CloseCalendar => state.calendar_target = None,
+        Message::CloseCalendar => {
+            state.calendar_target = None;
+            Task::none()
+        }
         Message::CalendarMonthPrev => {
             if state.calendar_state.month == 1 {
                 state.calendar_state.month = 12;
@@ -350,6 +603,7 @@ pub fn update(state: &mut State, message: Message) {
             } else {
                 state.calendar_state.month -= 1;
             }
+            Task::none()
         }
         Message::CalendarMonthNext => {
             if state.calendar_state.month == 12 {
@@ -358,6 +612,7 @@ pub fn update(state: &mut State, message: Message) {
             } else {
                 state.calendar_state.month += 1;
             }
+            Task::none()
         }
         Message::CalendarDaySelect(day) => {
             let s = &state.calendar_state;
@@ -369,30 +624,152 @@ pub fn update(state: &mut State, message: Message) {
                 }
             }
             state.calendar_target = None;
+            Task::none()
         }
         Message::ToggleXAxis => {
             state.x_axis_mode = match state.x_axis_mode {
                 XAxisMode::PaymentNumber => XAxisMode::Date,
                 XAxisMode::Date => XAxisMode::PaymentNumber,
             };
+            Task::none()
         }
-        Message::StackedChartMouseMoved(idx) => state.hovered_payment = Some(idx),
-        Message::StackedChartMouseLeft => state.hovered_payment = None,
-        Message::BalanceChartMouseMoved(idx) => state.hovered_payment = Some(idx),
-        Message::BalanceChartMouseLeft => state.hovered_payment = None,
-        Message::AddEuriborManualPoint => add_euribor_manual_point(state),
+        Message::StackedChartMouseMoved(idx) => {
+            state.hovered_payment = Some(idx);
+            Task::none()
+        }
+        Message::StackedChartMouseLeft => {
+            state.hovered_payment = None;
+            Task::none()
+        }
+        Message::BalanceChartMouseMoved(idx) => {
+            state.hovered_payment = Some(idx);
+            Task::none()
+        }
+        Message::BalanceChartMouseLeft => {
+            state.hovered_payment = None;
+            Task::none()
+        }
+        Message::AddEuriborManualPoint => {
+            add_euribor_manual_point(state);
+            Task::none()
+        }
         Message::RemoveEuriborManualPoint(idx) => {
             if idx < state.euribor_manual_points.len() {
                 state.euribor_manual_points.remove(idx);
                 state.status = format!("Removed Euribor point #{}", idx + 1);
                 state.status_is_error = false;
             }
+            Task::none()
         }
-        Message::EuriborNewDateChanged(v) => state.euribor_new_date = v,
-        Message::EuriborNewRateChanged(v) => state.euribor_new_rate = v,
-        Message::ToggleManualEuribor(v) => state.use_manual_euribor = v,
-        Message::SaveEuriborPoints => save_euribor_points(state),
-        Message::LoadEuriborPoints => load_euribor_points(state),
+        Message::EuriborNewDateChanged(v) => {
+            state.euribor_new_date = v;
+            Task::none()
+        }
+        Message::EuriborNewRateChanged(v) => {
+            state.euribor_new_rate = v;
+            Task::none()
+        }
+        Message::ToggleManualEuribor(v) => {
+            state.use_manual_euribor = v;
+            Task::none()
+        }
+        Message::SaveEuriborPoints => {
+            save_euribor_points(state);
+            Task::none()
+        }
+        Message::LoadEuriborPoints => {
+            load_euribor_points(state);
+            Task::none()
+        }
+        Message::FetchEuribor => {
+            let start_date = match chrono::NaiveDate::parse_from_str(&state.start_date, "%d-%m-%Y")
+            {
+                Ok(d) => d,
+                Err(_) => {
+                    state.status = "Invalid start date (DD-MM-YYYY)".to_string();
+                    state.status_is_error = true;
+                    return Task::none();
+                }
+            };
+            let tenor = if state.rate_mode == "Mixed" {
+                parse_tenor(&state.mixed_euribor_tenor)
+            } else {
+                parse_tenor(&state.euribor_tenor)
+            };
+            let curve_start = if state.rate_mode == "Mixed" {
+                let fix_years = state.mixed_fix_years.parse::<f64>().unwrap_or(2.0);
+                start_date
+                    .checked_add_months(chrono::Months::new((fix_years * 12.0).round() as u32))
+                    .unwrap_or(start_date)
+            } else {
+                start_date
+            };
+            let today = chrono::Local::now().date_naive();
+            let ecb_end = today;
+            let ecb_start = curve_start.min(
+                today
+                    .checked_sub_months(chrono::Months::new(3))
+                    .unwrap_or(today),
+            );
+
+            state.pending_calc = None;
+            state.status = format!("Loading Euribor {} historical data...", tenor);
+            state.status_is_error = false;
+
+            let mut cache = state.euribor_cache.clone();
+            Task::perform(
+                async move {
+                    cache
+                        .fetch_historical(tenor, ecb_start, ecb_end)
+                        .map_err(|e| e.to_string())
+                },
+                Message::EuriborLoaded,
+            )
+        }
+        Message::EuriborLoaded(result) => {
+            match result {
+                Ok(points) => {
+                    if let Some(mut params) = state.pending_calc.take() {
+                        params.euribor_curve = points;
+                        match Calculator::calculate(&params) {
+                            Ok(calc_result) => {
+                                state.params = Some(params);
+                                state.result = Some(calc_result);
+                                state.hovered_payment = None;
+                                state.status = "Calculation complete".to_string();
+                                state.status_is_error = false;
+                            }
+                            Err(e) => {
+                                state.status = format!("Error: {}", e);
+                                state.status_is_error = true;
+                            }
+                        }
+                    } else {
+                        state.euribor_manual_points = points
+                            .iter()
+                            .map(|p| {
+                                (
+                                    p.date_from.format("%d-%m-%Y").to_string(),
+                                    format!("{:.3}", p.rate),
+                                )
+                            })
+                            .collect();
+                        state.use_manual_euribor = true;
+                        state.status = format!(
+                            "Loaded {} Euribor points",
+                            state.euribor_manual_points.len()
+                        );
+                        state.status_is_error = false;
+                    }
+                }
+                Err(e) => {
+                    state.pending_calc = None;
+                    state.status = format!("Euribor fetch failed: {}", e);
+                    state.status_is_error = true;
+                }
+            }
+            Task::none()
+        }
     }
 }
 
@@ -410,7 +787,6 @@ fn add_prepayment(state: &mut State) {
                     amount,
                     effect,
                 });
-                state.prepayment_amount = "0".to_string();
                 state.status = format!("Added prepayment #{}", state.prepayments.len());
                 state.status_is_error = false;
                 return;
@@ -540,9 +916,9 @@ fn compact_input<'a>(
 ) -> Element<'a, Message> {
     text_input(placeholder, value)
         .on_input(msg)
-        .padding(0)
+        .padding(2)
         .size(16)
-        .width(Length::Fill)
+        .width(Length::Fixed(150.0))
         .into()
 }
 
@@ -571,13 +947,15 @@ pub fn view(state: &State) -> Element<'_, Message> {
     .into();
 
     let input_panel: Element<'_, Message> = if reverse_mode {
-        Column::from_vec(vec![
-            mode_switcher,
-            Rule::horizontal(1).into(),
-            view_reverse_section(state),
-        ])
-        .width(Length::FillPortion(1))
-        .height(Length::Shrink)
+        scrollable(
+            Column::from_vec(vec![
+                mode_switcher,
+                Rule::horizontal(1).into(),
+                view_reverse_section(state),
+            ])
+            .width(Length::FillPortion(1))
+            .height(Length::Shrink),
+        )
         .into()
     } else {
         let mut children: Vec<Element<Message>> = vec![
@@ -599,10 +977,12 @@ pub fn view(state: &State) -> Element<'_, Message> {
             children.push(Rule::horizontal(1).into());
             children.push(calendar_widget(&state.calendar_state));
         }
-        Column::from_vec(children)
-            .width(Length::FillPortion(1))
-            .height(Length::Shrink)
-            .into()
+        scrollable(
+            Column::from_vec(children)
+                .width(Length::FillPortion(1))
+                .height(Length::Shrink),
+        )
+        .into()
     };
 
     let results_panel = container(view_results_panel(state)).width(Length::FillPortion(3));
@@ -830,7 +1210,7 @@ fn view_prepay_section(state: &State) -> Element<'_, Message> {
     ));
     fields.push(
         button(" +Add ")
-            .padding(0)
+            .padding(2)
             .on_press(Message::AddPrepayment)
             .into(),
     );
@@ -930,6 +1310,7 @@ fn view_euribor_manual_section(state: &State) -> Element<'_, Message> {
     );
     fields.push(
         row![
+            button(" Fetch ").padding(0).on_press(Message::FetchEuribor),
             button(" Save ")
                 .padding(0)
                 .on_press(Message::SaveEuriborPoints),
@@ -1571,6 +1952,14 @@ fn calculate(state: &mut State) {
             return;
         }
     };
+    let start_date = match chrono::NaiveDate::parse_from_str(&state.start_date, "%d-%m-%Y") {
+        Ok(d) => d,
+        Err(_) => {
+            state.status = "Invalid start date (DD-MM-YYYY)".to_string();
+            state.status_is_error = true;
+            return;
+        }
+    };
     let currency = if state.currency == "USD" {
         Currency::Usd
     } else {
@@ -1581,15 +1970,6 @@ fn calculate(state: &mut State) {
     } else {
         PaymentType::Annuity
     };
-    let start_date = match chrono::NaiveDate::parse_from_str(&state.start_date, "%d-%m-%Y") {
-        Ok(d) => d,
-        Err(_) => {
-            state.status = "Invalid start date (DD-MM-YYYY)".to_string();
-            state.status_is_error = true;
-            return;
-        }
-    };
-
     let rate_mode = match state.rate_mode.as_str() {
         "Fix" => RateMode::Fix {
             rate: state.rate.parse::<f64>().unwrap_or(3.6),
@@ -1615,60 +1995,22 @@ fn calculate(state: &mut State) {
             spread: 0.0,
         },
     };
-
-    let euribor_curve = if state.rate_mode == "Euribor" || state.rate_mode == "Mixed" {
-        let tenor = if state.rate_mode == "Mixed" {
-            parse_tenor(&state.mixed_euribor_tenor)
-        } else {
-            parse_tenor(&state.euribor_tenor)
-        };
-        let curve_start = if state.rate_mode == "Mixed" {
-            let fix_years = state.mixed_fix_years.parse::<f64>().unwrap_or(2.0);
-            start_date
-                .checked_add_months(chrono::Months::new((fix_years * 12.0).round() as u32))
-                .unwrap_or(start_date)
-        } else {
-            start_date
-        };
-        let end_date = start_date
-            .checked_add_months(chrono::Months::new(term_years * 12))
-            .unwrap_or(start_date);
-        if state.use_manual_euribor && !state.euribor_manual_points.is_empty() {
-            state
-                .euribor_manual_points
-                .iter()
-                .filter_map(|(d, r)| {
-                    let date = chrono::NaiveDate::parse_from_str(d, "%d-%m-%Y").ok()?;
-                    let rate = r.parse::<f64>().ok()?;
-                    Some(EuriborPoint {
-                        date_from: date,
-                        rate,
-                    })
+    let euribor_curve = if state.use_manual_euribor && !state.euribor_manual_points.is_empty() {
+        state
+            .euribor_manual_points
+            .iter()
+            .filter_map(|(d, r)| {
+                let date = chrono::NaiveDate::parse_from_str(d, "%d-%m-%Y").ok()?;
+                let rate = r.parse::<f64>().ok()?;
+                Some(EuriborPoint {
+                    date_from: date,
+                    rate,
                 })
-                .collect()
-        } else {
-            state.status = format!("Loading Euribor {} historical data...", tenor);
-            state.status_is_error = false;
-            match state
-                .euribor_cache
-                .fetch_historical(tenor, curve_start, end_date)
-            {
-                Ok(points) => {
-                    state.status = format!("Loaded {} Euribor {} points", points.len(), tenor);
-                    state.status_is_error = false;
-                    points
-                }
-                Err(e) => {
-                    state.status = format!("Euribor fetch failed: {}.", e);
-                    state.status_is_error = true;
-                    return;
-                }
-            }
-        }
+            })
+            .collect()
     } else {
         vec![]
     };
-
     let params = LoanParams {
         amount,
         term_years,
@@ -1687,7 +2029,6 @@ fn calculate(state: &mut State) {
             .filter(|&v| v != 0.0),
         down_payment: state.down_payment.parse::<f64>().ok().filter(|&v| v != 0.0),
     };
-
     match Calculator::calculate(&params) {
         Ok(result) => {
             state.params = Some(params);
@@ -2063,12 +2404,8 @@ fn filter_date_input(raw: &str) -> String {
                 result.push(ch);
             }
         } else if i == 3 {
-            let prev = digits.chars().nth(2).unwrap_or('0');
-            let month: u32 = format!("{}{}", prev, ch).parse().unwrap_or(0);
-            if (1..=12).contains(&month) {
-                result.push(ch);
-                result.push('-');
-            }
+            result.push(ch);
+            result.push('-');
         } else {
             result.push(ch);
         }

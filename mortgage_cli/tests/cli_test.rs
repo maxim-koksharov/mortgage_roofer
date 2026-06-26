@@ -110,29 +110,29 @@ fn test_cli_yearly_summary() {
 
 #[test]
 fn test_cli_mixed_rate_mode() {
+    let config = r#"{
+        "amount": 100000,
+        "term_years": 10,
+        "payment_type": "annuitet",
+        "currency": "Eur",
+        "start_date": "2025-01-01",
+        "rate_mode": {"Mixed": {"fix_years": 2.0, "fix_rate": 3.0, "fix_spread": 1.0, "euribor_tenor": "6m", "euribor_spread": 2.0}},
+        "same_spread": false,
+        "euribor_curve": [{"date_from": "2027-01-01", "rate": 3.0}, {"date_from": "2028-01-01", "rate": 3.5}],
+        "prepayments": []
+    }"#;
+    let config_path = "/tmp/mortgage_cli_test_mixed_config.json";
+    std::fs::write(config_path, config).unwrap();
+
     let output = Command::new(cargo_bin())
-        .args(&[
-            "-a",
-            "100000",
-            "-t",
-            "10",
-            "--rate-mode",
-            "mixed",
-            "--fix-years",
-            "2",
-            "-r",
-            "3",
-            "--spread",
-            "1",
-            "--euribor-spread",
-            "2",
-        ])
+        .args(&["--config", config_path])
         .output()
         .expect("Failed to run CLI");
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Mixed"));
+    std::fs::remove_file(config_path).ok();
 }
 
 #[test]

@@ -167,7 +167,7 @@ pub struct Prepayment {
 }
 
 /// User-defined Euribor curve point: from this date onward use the given rate.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EuriborPoint {
     pub date_from: NaiveDate,
     pub rate: f64,

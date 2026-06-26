@@ -268,14 +268,23 @@ fn build_params_from_args(args: &Args) -> LoanParams {
             } else {
                 start_date
             };
+            let today = chrono::Local::now().date_naive();
+            let ecb_end = today;
+            let ecb_start = curve_start.min(
+                today
+                    .checked_sub_months(chrono::Months::new(3))
+                    .unwrap_or(today),
+            );
+            eprintln!("Loading Euribor {} historical data...", tenor);
             let mut cache = EuriborCache::default();
-            match cache.get_or_fetch(*tenor) {
-                Ok(rate) => {
-                    eprintln!("Auto-fetched Euribor {}: {:.3}%", tenor, rate);
-                    vec![EuriborPoint {
-                        date_from: curve_start,
-                        rate,
-                    }]
+            match cache.fetch_historical(*tenor, ecb_start, ecb_end) {
+                Ok(points) => {
+                    eprintln!(
+                        "Auto-fetched {} Euribor {} historical points",
+                        points.len(),
+                        tenor
+                    );
+                    points
                 }
                 Err(e) => {
                     eprintln!("Warning: Euribor fetch failed ({}), using empty curve", e);

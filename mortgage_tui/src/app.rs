@@ -590,13 +590,17 @@ impl App {
             if (self.rate_mode == 1 || self.rate_mode == 2) && self.euribor_curve.is_empty() {
                 let tenor = self.euribor_tenor();
                 let start_date = self.euribor_start_date();
-                let term_years = self.term.parse::<u32>().unwrap_or(30);
-                let end_date = start_date
-                    .checked_add_months(chrono::Months::new(term_years * 12))
-                    .unwrap_or(start_date);
+                let today = chrono::Local::now().date_naive();
+                let ecb_end = today;
+                let ecb_start = start_date.min(
+                    today
+                        .checked_sub_months(chrono::Months::new(3))
+                        .unwrap_or(today),
+                );
+                self.popup_msg = Some(format!("Loading Euribor {} historical data...", tenor));
                 match self
                     .euribor_cache
-                    .fetch_historical(tenor, start_date, end_date)
+                    .fetch_historical(tenor, ecb_start, ecb_end)
                 {
                     Ok(points) => {
                         let count = points.len();
